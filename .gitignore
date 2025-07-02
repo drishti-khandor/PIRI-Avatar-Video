@@ -1,0 +1,10 @@
+# Node & Next.js
+fastRTC-app/frontend/node_modules/
+fastRTC-app/frontend/.next/
+fastRTC-app/frontend/out/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
