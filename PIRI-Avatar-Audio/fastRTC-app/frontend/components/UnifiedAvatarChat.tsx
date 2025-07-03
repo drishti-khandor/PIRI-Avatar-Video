@@ -368,7 +368,9 @@ export function UnifiedAvatarChat() {
             // Camera setup
             const camera = new THREE.PerspectiveCamera(25, aspect, 0.1, 1000);
             camera.position.set(0, 1.5, 2);
+            // camera.position.set(0, 1.5, 20);
             camera.lookAt(0, 1.5, -2);
+            // camera.lookAt(0, 1.5, 0);
 
             // Renderer setup
             const renderer = new THREE.WebGLRenderer({
@@ -404,7 +406,9 @@ export function UnifiedAvatarChat() {
             // Load avatar
             const loader = new GLTFLoader();
             //const avatarPaths = ['/static/test5.glb', '/static/avatar.glb'];
-            const avatarPaths = ['/static/joined1111.glb'];
+            // const avatarPaths = ['/static/joined1111.glb'];
+            const avatarPaths = ['/static/joined2.glb'];
+            // const avatarPaths = ['/static/fixedaf.glb'];
 
             for (const path of avatarPaths) {
                 try {
@@ -425,6 +429,59 @@ export function UnifiedAvatarChat() {
                     avatarRef.current = gltf.scene;
                     scene.add(gltf.scene);
 
+                    // ✅ Fix: Only run after avatar is set
+                    const box = new THREE.Box3().setFromObject(gltf.scene);
+                    const center = box.getCenter(new THREE.Vector3());
+                    const size = box.getSize(new THREE.Vector3());
+
+                    // camera.position.copy(center.clone().add(new THREE.Vector3(0, size.y * 0.5, size.z * 2)));
+                    // camera.lookAt(center);
+
+                    // Move camera up to face level (1.5m is typical human eye height)
+                    const faceTarget = center.clone();
+                    faceTarget.y += size.y * 0.35;  // adjust this if face is too high/low
+
+                    camera.position.set(faceTarget.x, faceTarget.y, faceTarget.z + size.z * 2);
+                    camera.lookAt(faceTarget);
+
+                    console.log('📦 Avatar bounds:', box);
+                    console.log('📦 Bounding Box Min:', box.min);
+                    console.log('📦 Bounding Box Max:', box.max);
+                    console.log('📏 Size:', size);
+
+                    // Also fix materials
+                    gltf.scene.traverse((child) => {
+
+                        if (child.isMesh) {
+                            console.log('🧩 Mesh found:', child.name);
+                            console.log('    ➤ Vertices:', child.geometry?.attributes?.position?.count);
+                            console.log('    ➤ Morph targets:', child.morphTargetDictionary && Object.keys(child.morphTargetDictionary));
+                        }
+
+                        if (child.isMesh && child.material) {
+                            child.material.transparent = false;
+                            child.material.opacity = 1.0;
+                            child.material.depthWrite = true;
+                            child.material.side = THREE.FrontSide;
+
+                            console.log('🎨 Material:', child.material.name, {
+                                color: child.material.color?.getHexString(),
+                                emissive: child.material.emissive?.getHexString(),
+                                opacity: child.material.opacity,
+                                transparent: child.material.transparent,
+                            });
+
+                            // Debug: force emissive white for visibility
+                            child.material.emissive?.set(0xffffff);
+                        }
+                    });
+
+                    // Optional extra light
+                    const light = new THREE.PointLight(0xffffff, 10);
+                    light.position.set(0, 2, 2);
+                    scene.add(light);
+
+
                     // Find morph targets
                     gltf.scene.traverse((child: any) => {
                         if (child.isMesh && child.morphTargetInfluences) {
@@ -440,6 +497,8 @@ export function UnifiedAvatarChat() {
                     console.log(`Failed to load: ${path}`);
                 }
             }
+
+
 
             // Start render loop
             const animate = () => {
@@ -466,6 +525,8 @@ export function UnifiedAvatarChat() {
             return false;
         }
     }, []);
+
+
 
     // Apply blend shapes to avatar
     const applyBlendShapesToAvatar = useCallback((blendShapes: Record<string, number>) => {

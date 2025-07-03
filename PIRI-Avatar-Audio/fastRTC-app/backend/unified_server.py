@@ -858,7 +858,9 @@ async def get_unified_interface():
         // Load Avatar GLB
         async function loadAvatar() {
             // const avatarPaths = ['/static/test5.glb', '/static/avatar.glb'];
-            const avatarPaths = ['/static/joined1111.glb'];
+            # const avatarPaths = ['/static/joined1111.glb'];
+            const avatarPaths = ['/static/joined2.glb'];
+            # const avatarPaths = ['/static/fixedaf.glb'];
 
             for (const path of avatarPaths) {
                 try {
