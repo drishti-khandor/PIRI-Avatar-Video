@@ -366,9 +366,9 @@ export function UnifiedAvatarChat() {
             scene.background = new THREE.Color(0x000000);
 
             // Camera setup
-            const camera = new THREE.PerspectiveCamera(50, aspect, 0.1, 1000);
-            camera.position.set(0, 0, 1);
-            camera.lookAt(0, 0, 0);
+            const camera = new THREE.PerspectiveCamera(25, aspect, 0.1, 1000);
+            camera.position.set(0, 1.5, 2);
+            camera.lookAt(0, 1.5, -2);
 
             // Renderer setup
             const renderer = new THREE.WebGLRenderer({
@@ -404,7 +404,7 @@ export function UnifiedAvatarChat() {
             // Load avatar
             const loader = new GLTFLoader();
             //const avatarPaths = ['/static/test5.glb', '/static/avatar.glb'];
-            const avatarPaths = ['/static/joined2.glb'];
+            const avatarPaths = ['/static/joined1111.glb'];
 
             for (const path of avatarPaths) {
                 try {

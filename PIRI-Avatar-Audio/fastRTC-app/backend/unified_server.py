@@ -17,6 +17,7 @@ import platform
 import socket
 from typing import List, Dict
 import numpy as np
+import threading
 
 # FastRTC and AI imports
 from fastrtc import ReplyOnPause, Stream, AlgoOptions, SileroVadOptions, AdditionalOutputs
@@ -303,7 +304,40 @@ def process_audio_and_respond(audio):
                 yield AdditionalOutputs(viseme_data)
                 logging.info(f"Sent visemes for chunk {chunk_index}: {[v.viseme for v in visemes]}")
                 # ADD THIS LINE:
-                await viseme_controller.update_from_ai_visemes(viseme_data["visemes"])
+                # await viseme_controller.update_from_ai_visemes(viseme_data["visemes"])
+                # try:
+                #     loop = asyncio.get_event_loop()
+                #     if loop.is_running():
+                #         # If loop is running, schedule the coroutine
+                #         asyncio.run_coroutine_threadsafe(
+                #             viseme_controller.update_from_ai_visemes(viseme_data["visemes"]),
+                #             loop
+                #         )
+                #     else:
+                #         # If no loop running, run it directly
+                #         loop.run_until_complete(
+                #             viseme_controller.update_from_ai_visemes(viseme_data["visemes"])
+                #         )
+                # except Exception as e:
+                #     logging.error(f"Failed to update avatar visemes: {e}")
+
+                def update_avatar_async():
+                    import asyncio
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    try:
+                        loop.run_until_complete(
+                            viseme_controller.update_from_ai_visemes(viseme_data["visemes"])
+                        )
+                    finally:
+                        loop.close()
+
+                # Start in background thread
+                threading.Thread(target=update_avatar_async, daemon=True).start()
+
+                yield sample_rate, audio_chunk
+
+                chunk_index += 1
 
             except Exception as e:
                 logging.error(f"Viseme extraction failed for chunk {chunk_index}: {e}")
@@ -318,9 +352,9 @@ def process_audio_and_respond(audio):
                 })
 
             # Yield the audio chunk for playback
-            yield sample_rate, audio_chunk
-
-            chunk_index += 1
+            # yield sample_rate, audio_chunk
+            #
+            # chunk_index += 1
 
         logging.info("Finished TTS streaming with visemes.")
 
@@ -824,7 +858,7 @@ async def get_unified_interface():
         // Load Avatar GLB
         async function loadAvatar() {
             // const avatarPaths = ['/static/test5.glb', '/static/avatar.glb'];
-            const avatarPaths = ['/static/joined2.glb'];
+            const avatarPaths = ['/static/joined1111.glb'];
 
             for (const path of avatarPaths) {
                 try {
