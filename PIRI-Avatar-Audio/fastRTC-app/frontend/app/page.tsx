@@ -8,12 +8,22 @@
 //   );
 // }
 
-import { UnifiedAvatarChat } from "@/components/UnifiedAvatarChat";
+// import { UnifiedAvatarChat } from "@/components/UnifiedAvatarChat";
+//
+// export default function Home() {
+//   return (
+//     <div className="w-full h-screen">
+//       <UnifiedAvatarChat />
+//     </div>
+//   );
+// }
+
+import { EnhancedVRMAvatarChat } from "@/components/UnifiedAvatarChat";
 
 export default function Home() {
   return (
     <div className="w-full h-screen">
-      <UnifiedAvatarChat />
+      <EnhancedVRMAvatarChat />
     </div>
   );
 }

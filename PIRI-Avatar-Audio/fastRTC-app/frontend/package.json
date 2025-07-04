@@ -9,6 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@pixiv/three-vrm": "^3.4.1",
     "@radix-ui/react-avatar": "^1.1.10",
     "@types/three": "^0.178.0",
     "class-variance-authority": "^0.7.0",

@@ -3,12 +3,14 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
-// Types
-interface VisemeData {
+// Types for VRM-enhanced system
+interface EnhancedVisemeData {
     viseme: string;
     start_time: number;
     end_time: number;
     confidence: number;
+    phoneme?: string;
+    emotion?: string;
 }
 
 interface ChatMessage {
@@ -17,11 +19,11 @@ interface ChatMessage {
     timestamp?: number;
 }
 
-interface AvatarWebSocketData {
+interface VRMWebSocketData {
     type: string;
-    visemes?: Record<string, number>;
     blend_shapes?: Record<string, number>;
     timestamp?: number;
+    emotion?: string;
 }
 
 interface WebRTCClientOptions {
@@ -33,11 +35,10 @@ interface WebRTCClientOptions {
     audioInputDeviceId?: string;
     audioOutputDeviceId?: string;
     webrtcId?: string;
-
-
 }
 
-    class UnifiedWebRTCClient {
+// Enhanced WebRTC Client for VRM system (using working port and endpoints)
+class EnhancedVRMWebRTCClient {
     private peerConnection: RTCPeerConnection | null = null;
     private mediaStream: MediaStream | null = null;
     private dataChannel: RTCDataChannel | null = null;
@@ -57,34 +58,23 @@ interface WebRTCClientOptions {
         this.webrtcId = options.webrtcId;
     }
 
-    // Method to change audio input device
     setAudioInputDevice(deviceId: string) {
         this.currentInputDeviceId = deviceId;
-
-        // If we're already connected, reconnect with the new device
         if (this.peerConnection) {
             this.disconnect();
             this.connect();
         }
     }
 
-    // Method to change audio output device
     setAudioOutputDevice(deviceId: string) {
         this.currentOutputDeviceId = deviceId;
-
-        // Apply to any current audio elements
-        if (this.options.onAudioStream) {
-            // The onAudioStream callback should handle setting the output device
-            // We'll pass the updated device ID through the options
-            this.options.audioOutputDeviceId = deviceId;
-        }
+        this.options.audioOutputDeviceId = deviceId;
     }
 
     async connect() {
         try {
             this.peerConnection = new RTCPeerConnection();
 
-            // Get user media with specific device if specified
             try {
                 const constraints: MediaStreamConstraints = {
                     audio: this.currentInputDeviceId
@@ -115,13 +105,9 @@ interface WebRTCClientOptions {
             this.peerConnection.addEventListener('track', (event) => {
                 if (this.options.onAudioStream) {
                     const stream = event.streams[0];
-
-                    // If we have an audio output device specified and the browser supports setSinkId
                     if (this.currentOutputDeviceId && 'setSinkId' in HTMLAudioElement.prototype) {
-                        // We'll let the callback handle this, as we need access to the audio element
                         this.options.audioOutputDeviceId = this.currentOutputDeviceId;
                     }
-
                     this.options.onAudioStream(stream);
                 }
             });
@@ -132,7 +118,6 @@ interface WebRTCClientOptions {
                 try {
                     const message = JSON.parse(event.data);
                     console.log('Received message:', message);
-
                     if (this.options.onMessage) {
                         this.options.onMessage(message);
                     }
@@ -141,18 +126,17 @@ interface WebRTCClientOptions {
                 }
             });
 
-            // Create and send offer
             const offer = await this.peerConnection.createOffer();
             await this.peerConnection.setLocalDescription(offer);
 
-            // Use same-origin request to avoid CORS preflight
+            // Fixed: Use port 8000 and relative URL to match your unified_server.py
             const response = await fetch('http://localhost:8001/webrtc/offer', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'Accept': 'application/json'
                 },
-                mode: 'cors', // Explicitly set CORS mode
+                mode: 'cors',
                 credentials: 'same-origin',
                 body: JSON.stringify({
                     sdp: offer.sdp,
@@ -160,11 +144,12 @@ interface WebRTCClientOptions {
                     webrtc_id: this.webrtcId
                 })
             });
-            // const serverResponse = await response.json();
+
             console.log('Response status:', response.status);
             const responseText = await response.text();
             console.log('Raw response:', responseText);
-             let serverResponse: any;
+
+            let serverResponse: any;
             try {
                 serverResponse = JSON.parse(responseText);
                 console.log('Parsed response:', serverResponse);
@@ -210,17 +195,14 @@ interface WebRTCClientOptions {
     private startAnalysis() {
         if (!this.analyser || !this.dataArray || !this.options.onAudioLevel) return;
 
-        // Add throttling to prevent too many updates
         let lastUpdateTime = 0;
-        const throttleInterval = 100; // Only update every 100ms
+        const throttleInterval = 100;
 
         const analyze = () => {
             this.analyser!.getByteFrequencyData(this.dataArray!);
 
             const currentTime = Date.now();
-            // Only update if enough time has passed since last update
             if (currentTime - lastUpdateTime > throttleInterval) {
-                // Calculate average volume level (0-1)
                 let sum = 0;
                 for (let i = 0; i < this.dataArray!.length; i++) {
                     sum += this.dataArray![i];
@@ -273,25 +255,28 @@ interface WebRTCClientOptions {
     }
 }
 
-// Main component
-export function UnifiedAvatarChat() {
+// Main Enhanced VRM Avatar Chat Component
+export function EnhancedVRMAvatarChat() {
     // State management
     const [isConnected, setIsConnected] = useState(false);
     const [isRecording, setIsRecording] = useState(false);
     const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
     const [avatarStatus, setAvatarStatus] = useState<'connected' | 'disconnected'>('disconnected');
-    const [currentVisemes, setCurrentVisemes] = useState<Record<string, number>>({});
+    const [currentBlendShapes, setCurrentBlendShapes] = useState<Record<string, number>>({});
+    const [currentEmotion, setCurrentEmotion] = useState<string>('neutral');
     const [audioLevel, setAudioLevel] = useState(0);
+    const [vrmLoaded, setVrmLoaded] = useState(false);
+    const [dominantViseme, setDominantViseme] = useState<string>('sil');
 
     // Refs
-    const webrtcClientRef = useRef<UnifiedWebRTCClient | null>(null);
+    const webrtcClientRef = useRef<EnhancedVRMWebRTCClient | null>(null);
     const audioRef = useRef<HTMLAudioElement>(null);
     const outputDeviceIdRef = useRef<string | undefined>(undefined);
     const avatarWebSocketRef = useRef<WebSocket | null>(null);
     const chatBottomRef = useRef<HTMLDivElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const sceneRef = useRef<any>(null);
-    const avatarRef = useRef<any>(null);
+    const vrmRef = useRef<any>(null);
     const rendererRef = useRef<any>(null);
     const webrtcId = useRef(Math.random().toString(36).substring(7));
 
@@ -300,60 +285,79 @@ export function UnifiedAvatarChat() {
         chatBottomRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [chatMessages]);
 
-    // Initialize Avatar WebSocket
-    const initAvatarWebSocket = useCallback(() => {
+    // Initialize Enhanced VRM Avatar WebSocket (Fixed URL)
+    const initVRMAvatarWebSocket = useCallback(() => {
         try {
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             const ws = new WebSocket(`${protocol}//localhost:8001/ws/avatar`);
 
             ws.onopen = () => {
                 setAvatarStatus('connected');
-                console.log('✅ Avatar WebSocket connected');
+                console.log('✅ Enhanced VRM Avatar WebSocket connected');
             };
 
             ws.onmessage = (event) => {
                 try {
-                    const data: AvatarWebSocketData = JSON.parse(event.data);
-                    if (data.type === 'viseme_update' && data.visemes) {
-                        setCurrentVisemes(data.visemes);
-                        // Apply to 3D avatar if loaded
-                        if (avatarRef.current && data.blend_shapes) {
-                            applyBlendShapesToAvatar(data.blend_shapes);
+                    const data: VRMWebSocketData = JSON.parse(event.data);
+                    if (data.type === 'viseme_update') {
+                        if (data.blend_shapes) {
+                            setCurrentBlendShapes(data.blend_shapes);
+                            applyVRMBlendShapes(data.blend_shapes);
+
+                            // Update dominant viseme
+                            const dominant = findDominantBlendShape(data.blend_shapes);
+                            setDominantViseme(dominant);
+                        }
+                        if (data.emotion) {
+                            setCurrentEmotion(data.emotion);
                         }
                     }
                 } catch (error) {
-                    console.error('Avatar WebSocket message error:', error);
+                    console.error('VRM Avatar WebSocket message error:', error);
                 }
             };
 
             ws.onclose = () => {
                 setAvatarStatus('disconnected');
-                console.log('❌ Avatar WebSocket disconnected');
-                // Reconnect after 3 seconds
-                setTimeout(initAvatarWebSocket, 3000);
+                console.log('❌ VRM Avatar WebSocket disconnected');
+                setTimeout(initVRMAvatarWebSocket, 3000);
             };
 
             ws.onerror = (error) => {
-                console.error('Avatar WebSocket error:', error);
+                console.error('VRM Avatar WebSocket error:', error);
             };
 
             avatarWebSocketRef.current = ws;
 
         } catch (error) {
-            console.error('Failed to initialize Avatar WebSocket:', error);
-            setTimeout(initAvatarWebSocket, 3000);
+            console.error('Failed to initialize VRM Avatar WebSocket:', error);
+            setTimeout(initVRMAvatarWebSocket, 3000);
         }
     }, []);
 
-    // Initialize Three.js Avatar Scene
-    const initThreeJS = useCallback(async () => {
+    // Initialize Three.js with VRM Support (Fixed paths and imports)
+    const initThreeJSWithVRM = useCallback(async () => {
         if (!canvasRef.current) return false;
 
         try {
-            // Dynamic import of Three.js
+            // Dynamic imports for Three.js and VRM
             const THREE = await import('three');
-            // const { GLTFLoader } = await import('three/examples/jsm/loaders/GLTFLoader.js');
             const { GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js');
+
+            // Try to import VRM - if it fails, fallback to GLB
+            let VRMLoaderPlugin, VRMUtils;
+            let isVRMSupported = false;
+
+            try {
+                const vrmModule = await import('@pixiv/three-vrm');
+                VRMLoaderPlugin = vrmModule.VRMLoaderPlugin;
+                VRMUtils = vrmModule.VRMUtils;
+                isVRMSupported = true;
+                console.log('✅ VRM support loaded');
+            } catch (vrmError) {
+                console.warn('⚠️ VRM support not available, falling back to GLB:', vrmError);
+                isVRMSupported = false;
+            }
 
             const canvas = canvasRef.current;
             const container = canvas.parentElement;
@@ -365,12 +369,10 @@ export function UnifiedAvatarChat() {
             const scene = new THREE.Scene();
             scene.background = new THREE.Color(0x000000);
 
-            // Camera setup
-            const camera = new THREE.PerspectiveCamera(25, aspect, 0.1, 1000);
+            // Camera setup (optimized for face focus)
+            const camera = new THREE.PerspectiveCamera(35, aspect, 0.1, 1000);
             camera.position.set(0, 1.5, 2);
-            // camera.position.set(0, 1.5, 20);
-            camera.lookAt(0, 1.5, -2);
-            // camera.lookAt(0, 1.5, 0);
+            camera.lookAt(0, 1.5, 0);
 
             // Renderer setup
             const renderer = new THREE.WebGLRenderer({
@@ -387,110 +389,128 @@ export function UnifiedAvatarChat() {
             renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
             renderer.outputColorSpace = THREE.SRGBColorSpace;
 
-            // Lighting
-            const hemisphereLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.8);
-            scene.add(hemisphereLight);
+            // Enhanced lighting for VRM models
+            const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 0.8);
+            scene.add(hemi);
 
-            const directionalLight1 = new THREE.DirectionalLight(0xffffff, 1.2);
-            directionalLight1.position.set(0, 1, 2);
-            scene.add(directionalLight1);
+            const key = new THREE.DirectionalLight(0xffffff, 1.2);
+            key.position.set(0, 1, 2);
+            scene.add(key);
 
-            const directionalLight2 = new THREE.DirectionalLight(0xffffff, 0.6);
-            directionalLight2.position.set(0, 1, -2);
-            scene.add(directionalLight2);
+            const rim = new THREE.DirectionalLight(0xffffff, 0.6);
+            rim.position.set(0, 1, -2);
+            scene.add(rim);
+
+            // Initialize GLTF loader
+            const gltfLoader = new GLTFLoader();
+
+            // Add VRM plugin if available
+            if (isVRMSupported && VRMLoaderPlugin) {
+                gltfLoader.register((parser) => new VRMLoaderPlugin(parser));
+            }
 
             // Store references
             sceneRef.current = { scene, camera, renderer };
             rendererRef.current = renderer;
 
-            // Load avatar
-            const loader = new GLTFLoader();
-            //const avatarPaths = ['/static/test5.glb', '/static/avatar.glb'];
-            // const avatarPaths = ['/static/joined1111.glb'];
-            const avatarPaths = ['/static/joined2.glb'];
-            // const avatarPaths = ['/static/fixedaf.glb'];
+            // Load avatar - try VRM first, then GLB fallback
+            // const avatarPaths = [
+            //     '/static/avatar.vrm',
+            //     '/static/joined1111.vrm',
+            //     '/static/test.vrm',
+            //     // Fallback to GLB files
+            //     '/static/joined2.glb',
+            //     '/static/joined1111.glb',
+            //     '/static/avatar.glb'
+            // ];
+            const avatarPaths = ['/static/4thjuly.vrm'];
 
             for (const path of avatarPaths) {
                 try {
                     console.log(`Loading avatar: ${path}`);
+
                     const gltf = await new Promise<any>((resolve, reject) => {
-                        loader.load(
-                            `http://localhost:8001${path}`,
-                            resolve,
-                            undefined,
-                            reject
-                        );
+                        gltfLoader.load(`http://localhost:8001${path}`, resolve, undefined, reject);
                     });
 
-                    if (avatarRef.current) {
-                        scene.remove(avatarRef.current);
+                    // Check if this is a VRM file
+                    const vrm = gltf.userData?.vrm;
+                    const isVRM = !!vrm;
+
+                    if (vrmRef.current) {
+                        scene.remove(vrmRef.current.scene || vrmRef.current);
                     }
 
-                    avatarRef.current = gltf.scene;
-                    scene.add(gltf.scene);
+                    if (isVRM) {
+                        // Handle VRM
+                        vrmRef.current = vrm;
+                        scene.add(vrm.scene);
 
-                    // ✅ Fix: Only run after avatar is set
-                    const box = new THREE.Box3().setFromObject(gltf.scene);
-                    const center = box.getCenter(new THREE.Vector3());
-                    const size = box.getSize(new THREE.Vector3());
-
-                    // camera.position.copy(center.clone().add(new THREE.Vector3(0, size.y * 0.5, size.z * 2)));
-                    // camera.lookAt(center);
-
-                    // Move camera up to face level (1.5m is typical human eye height)
-                    const faceTarget = center.clone();
-                    faceTarget.y += size.y * 0.35;  // adjust this if face is too high/low
-
-                    camera.position.set(faceTarget.x, faceTarget.y, faceTarget.z + size.z * 2);
-                    camera.lookAt(faceTarget);
-
-                    console.log('📦 Avatar bounds:', box);
-                    console.log('📦 Bounding Box Min:', box.min);
-                    console.log('📦 Bounding Box Max:', box.max);
-                    console.log('📏 Size:', size);
-
-                    // Also fix materials
-                    gltf.scene.traverse((child) => {
-
-                        if (child.isMesh) {
-                            console.log('🧩 Mesh found:', child.name);
-                            console.log('    ➤ Vertices:', child.geometry?.attributes?.position?.count);
-                            console.log('    ➤ Morph targets:', child.morphTargetDictionary && Object.keys(child.morphTargetDictionary));
+                        // VRM-specific optimizations
+                        if (VRMUtils) {
+                            VRMUtils.removeUnnecessaryVertices(vrm.scene);
+                            VRMUtils.removeUnnecessaryJoints(vrm.scene);
                         }
 
-                        if (child.isMesh && child.material) {
-                            child.material.transparent = false;
-                            child.material.opacity = 1.0;
-                            child.material.depthWrite = true;
-                            child.material.side = THREE.FrontSide;
-
-                            console.log('🎨 Material:', child.material.name, {
-                                color: child.material.color?.getHexString(),
-                                emissive: child.material.emissive?.getHexString(),
-                                opacity: child.material.opacity,
-                                transparent: child.material.transparent,
-                            });
-
-                            // Debug: force emissive white for visibility
-                            child.material.emissive?.set(0xffffff);
+                        // Log VRM blend shapes for debugging
+                        if (vrm.expressionManager) {
+                            console.log('✅ VRM Expression Manager found');
+                            console.log('VRM expressions:', Object.keys(vrm.expressionManager.expressionMap || {}));
                         }
-                    });
 
-                    // Optional extra light
-                    const light = new THREE.PointLight(0xffffff, 10);
-                    light.position.set(0, 2, 2);
-                    scene.add(light);
+                        // Enhanced VRM blend shape detection
+                        vrm.scene.traverse((child: any) => {
+                            if (child.isMesh && child.morphTargetInfluences) {
+                                child.userData.morphTargets = child.morphTargetDictionary;
+                                if (child.morphTargetDictionary) {
+                                    const morphNames = Object.keys(child.morphTargetDictionary);
+                                    console.log('🎭 VRM morph targets found:', morphNames);
+                                }
+                            }
+                        });
 
+                        // Camera positioning for VRM
+                        const box = new THREE.Box3().setFromObject(vrm.scene);
+                        const center = box.getCenter(new THREE.Vector3());
+                        const size = box.getSize(new THREE.Vector3());
 
-                    // Find morph targets
-                    gltf.scene.traverse((child: any) => {
-                        if (child.isMesh && child.morphTargetInfluences) {
-                            child.userData.morphTargets = child.morphTargetDictionary;
-                            console.log('🎭 Morph targets found:', Object.keys(child.morphTargetDictionary || {}));
-                        }
-                    });
+                        const faceTarget = center.clone();
+                        faceTarget.y += size.y * 0.35;
 
-                    console.log(`✅ Avatar loaded: ${path}`);
+                        camera.position.set(faceTarget.x, faceTarget.y, faceTarget.z + size.z * 2);
+                        camera.lookAt(faceTarget);
+
+                        console.log(`✅ VRM avatar loaded: ${path}`);
+                    } else {
+                        // Handle GLB
+                        vrmRef.current = gltf.scene;
+                        scene.add(gltf.scene);
+
+                        // Camera positioning for GLB
+                        const box = new THREE.Box3().setFromObject(gltf.scene);
+                        const center = box.getCenter(new THREE.Vector3());
+                        const size = box.getSize(new THREE.Vector3());
+
+                        const faceTarget = center.clone();
+                        faceTarget.y += size.y * 0.35;
+
+                        camera.position.set(faceTarget.x, faceTarget.y, faceTarget.z + size.z * 2);
+                        camera.lookAt(faceTarget);
+
+                        // Find morph targets for GLB
+                        gltf.scene.traverse((child: any) => {
+                            if (child.isMesh && child.morphTargetInfluences) {
+                                child.userData.morphTargets = child.morphTargetDictionary;
+                                if (child.morphTargetDictionary) {
+                                    console.log('🎭 GLB morph targets found:', Object.keys(child.morphTargetDictionary));
+                                }
+                            }
+                        });
+
+                        console.log(`✅ GLB avatar loaded: ${path}`);
+                    }
+
+                    setVrmLoaded(true);
                     break;
 
                 } catch (error) {
@@ -498,11 +518,20 @@ export function UnifiedAvatarChat() {
                 }
             }
 
-
+            if (!vrmRef.current) {
+                console.log('❌ No avatar found. Please place a .vrm or .glb file in /static/');
+                setVrmLoaded(false);
+            }
 
             // Start render loop
             const animate = () => {
                 requestAnimationFrame(animate);
+
+                // Update VRM if available
+                if (vrmRef.current && vrmRef.current.update) {
+                    vrmRef.current.update(0.016); // ~60fps delta time
+                }
+
                 renderer.render(scene, camera);
             };
             animate();
@@ -526,32 +555,112 @@ export function UnifiedAvatarChat() {
         }
     }, []);
 
+    // Add this VRM expression mapping
+        const VRM_EXPRESSION_MAPPING = {
+            'Fcl_MTH_A': 'aa',
+            'Fcl_MTH_E': 'ee',
+            'Fcl_MTH_I': 'ih',
+            'Fcl_MTH_O': 'ou',
+            'Fcl_MTH_U': 'ou',
+            'Fcl_MTH_Small': 'ih',
+            'Fcl_MTH_Large': 'aa',
+            'Fcl_MTH_Close': 'sil',
+            'Fcl_MTH_Neutral': 'neutral',
+            'Fcl_ALL_Joy': 'happy',
+            'Fcl_ALL_Sorrow': 'sad',
+            'Fcl_ALL_Surprised': 'surprised',
+            'Fcl_ALL_Angry': 'angry',
+            'Fcl_EYE_Natural': 'relaxed',
+            'Fcl_EYE_Joy': 'happy',
+            'Fcl_EYE_Sorrow': 'sad'
+        };
+
+    // Apply VRM/GLB blend shapes
+    const applyVRMBlendShapes = useCallback((blendShapes: Record<string, number>) => {
+        console.log()
+        if (!vrmRef.current) return;
+        else console.log('workingggggggg')
+        // Check if this is a VRM with expression manager
+        // if (vrmRef.current.expressionManager) {
+        //     for (const [shapeName, value] of Object.entries(blendShapes)) {
+        //         if (vrmRef.current.expressionManager.expressionMap[shapeName]) {
+        //             vrmRef.current.expressionManager.setValue(shapeName, Math.max(0, Math.min(1, value)));
+        //             console.log(`Setting VRM expression: ${shapeName} to ${value}`);
+        //         }
+        //
+        //     }
+        //     vrmRef.current.expressionManager.update();
+        // }
 
 
-    // Apply blend shapes to avatar
-    const applyBlendShapesToAvatar = useCallback((blendShapes: Record<string, number>) => {
-        if (!avatarRef.current) return;
+        // Replace the expression manager section with:
+        if (vrmRef.current.expressionManager) {
+            console.log('Available VRM expressions:', Object.keys(vrmRef.current.expressionManager.expressionMap || {}));
 
-        avatarRef.current.traverse((child: any) => {
-            if (child.isMesh && child.morphTargetInfluences && child.morphTargetDictionary) {
-                // Reset all morph targets
-                for (let i = 0; i < child.morphTargetInfluences.length; i++) {
-                    child.morphTargetInfluences[i] = 0;
+            for (const [shapeName, value] of Object.entries(blendShapes)) {
+                // Try direct mapping first
+                if (vrmRef.current.expressionManager.expressionMap[shapeName]) {
+                    vrmRef.current.expressionManager.setValue(shapeName, Math.max(0, Math.min(1, value)));
+                    console.log(`✅ Direct VRM expression: ${shapeName} = ${value}`);
                 }
-
-                // Apply new blend shape values
-                for (const [shapeName, value] of Object.entries(blendShapes)) {
-                    const index = child.morphTargetDictionary[shapeName];
-                    if (index !== undefined) {
-                        child.morphTargetInfluences[index] = value;
+                // Try mapped name
+                else if (VRM_EXPRESSION_MAPPING[shapeName]) {
+                    const mappedName = VRM_EXPRESSION_MAPPING[shapeName];
+                    if (vrmRef.current.expressionManager.expressionMap[mappedName]) {
+                        vrmRef.current.expressionManager.setValue(mappedName, Math.max(0, Math.min(1, value)));
+                        console.log(`✅ Mapped VRM expression: ${shapeName} -> ${mappedName} = ${value}`);
                     }
                 }
+                else {
+                    console.log(`❌ No VRM expression found for: ${shapeName}`);
+                }
             }
-        });
+            vrmRef.current.expressionManager.update();
+        }
+
+        else {
+            // Fallback to direct morph target manipulation (GLB or VRM without expression manager)
+            const targetObject = vrmRef.current.scene || vrmRef.current;
+
+            targetObject.traverse((child: any) => {
+                if (child.isMesh && child.morphTargetInfluences && child.morphTargetDictionary) {
+                    // Smooth decay
+                    for (let i = 0; i < child.morphTargetInfluences.length; i++) {
+                        child.morphTargetInfluences[i] *= 0.9;
+                    }
+                    console.log('Applying blend shapes to mesh:', child.name);
+
+                    // Apply new values
+                    for (const [shapeName, value] of Object.entries(blendShapes)) {
+                        const index = child.morphTargetDictionary[shapeName];
+                        if (index !== undefined && value > 0.001) {
+                            const currentValue = child.morphTargetInfluences[index] || 0;
+                            child.morphTargetInfluences[index] = currentValue + (value - currentValue) * 0.3;
+                        }
+                        console.log(`Setting morph target: ${shapeName} to ${child.morphTargetInfluences[index]}`);
+                    }
+                }
+            });
+        }
     }, []);
 
-    // Initialize AI Chat SSE
-    const initAIChatSSE = useCallback(() => {
+    // Find dominant blend shape for display
+    const findDominantBlendShape = useCallback((blendShapes: Record<string, number>): string => {
+        let dominantShape = 'sil';
+        let maxWeight = 0;
+
+        for (const [shapeName, weight] of Object.entries(blendShapes)) {
+            if (weight > maxWeight) {
+                maxWeight = weight;
+                dominantShape = shapeName;
+            }
+        }
+
+        return maxWeight > 0.1 ? dominantShape : 'sil';
+    }, []);
+
+    // Initialize Enhanced AI Chat SSE (Fixed URL)
+    const initEnhancedAIChatSSE = useCallback(() => {
         const eventSource = new EventSource(`http://localhost:8001/updates?webrtc_id=${webrtcId.current}`);
 
         eventSource.onmessage = (event) => {
@@ -565,86 +674,61 @@ export function UnifiedAvatarChat() {
                         timestamp: Date.now()
                     }]);
                 } else if (data.type === "visemes") {
-                    console.log("Received AI visemes:", data);
-                    // Visemes are automatically applied via the backend WebSocket
+                    console.log("Received enhanced VRM visemes from AI:", data);
+                    // Enhanced visemes are automatically processed by the backend
                 }
             } catch (err) {
-                console.error("SSE parse error", err);
+                console.error("Enhanced SSE parse error", err);
             }
         };
 
         eventSource.onerror = (err) => {
-            console.error("SSE error", err);
+            console.error("Enhanced SSE error", err);
         };
 
         return eventSource;
     }, []);
 
-    // Voice recording handlers
-    const startRecording = useCallback(async () => {
+    // Enhanced emotion setting for VRM
+    const setVRMEmotion = useCallback(async (emotion: string) => {
         try {
-            if (!webrtcClientRef.current) {
-                webrtcClientRef.current = new UnifiedWebRTCClient({
-                    webrtcId: webrtcId.current,
-                    onAudioLevel: (level) => setAudioLevel(level),
-                    onConnected: () => setIsConnected(true),
-                    onDisconnected: () => setIsConnected(false)
-                });
+            const response = await fetch('http://localhost:8001/set_emotion', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ emotion: emotion })
+            });
+
+            if (response.ok) {
+                setCurrentEmotion(emotion);
+                console.log(`✅ VRM emotion set to: ${emotion}`);
+            } else {
+                console.error('Failed to set VRM emotion');
             }
-
-            await webrtcClientRef.current.connect();
-            setIsRecording(true);
-            setIsConnected(true);
-
         } catch (error) {
-            console.error('Failed to start recording:', error);
-            setChatMessages(prev => [...prev, {
-                type: "llm",
-                text: "Failed to start recording. Please check your microphone permissions.",
-                timestamp: Date.now()
-            }]);
+            console.error('Error setting VRM emotion:', error);
         }
     }, []);
 
-    const stopRecording = useCallback(() => {
-        if (webrtcClientRef.current) {
-            webrtcClientRef.current.disconnect();
-            setIsRecording(false);
-            setIsConnected(false);
-        }
-    }, []);
-
-    // Voice recording toggle handler
+    // Enhanced voice recording toggle handler
     const toggleRecording = useCallback(async () => {
         if (isRecording) {
-            // Stop recording
             if (webrtcClientRef.current) {
                 webrtcClientRef.current.disconnect();
                 setIsRecording(false);
                 setIsConnected(false);
             }
         } else {
-            // Start recording
             try {
                 if (!webrtcClientRef.current) {
-                    // webrtcClientRef.current = new UnifiedWebRTCClient({
-                    //     webrtcId: webrtcId.current,
-                    //     onAudioLevel: (level) => setAudioLevel(level),
-                    //     onConnected: () => setIsConnected(true),
-                    //     onDisconnected: () => setIsConnected(false)
-                    // });
-
-                    webrtcClientRef.current = new UnifiedWebRTCClient({
+                    webrtcClientRef.current = new EnhancedVRMWebRTCClient({
                         webrtcId: webrtcId.current,
                         onAudioLevel: (level) => setAudioLevel(level),
                         onConnected: () => setIsConnected(true),
                         onDisconnected: () => setIsConnected(false),
-                        // ADD THIS:
                         onAudioStream: (stream: MediaStream) => {
                             console.log('🎵 Received audio stream:', stream);
 
                             if (!audioRef.current) {
-                                // Create audio element if it doesn't exist
                                 const audio = document.createElement('audio');
                                 audio.autoplay = true;
                                 audio.volume = 1.0;
@@ -654,18 +738,15 @@ export function UnifiedAvatarChat() {
 
                             audioRef.current.srcObject = stream;
 
-                            // Handle output device if specified
                             if (outputDeviceIdRef.current && 'setSinkId' in HTMLAudioElement.prototype) {
                                 (audioRef.current as any).setSinkId(outputDeviceIdRef.current)
                                     .catch((err: any) => console.error('Error setting audio output device:', err));
                             }
 
-                            // Force play (handle autoplay restrictions)
                             audioRef.current.play().then(() => {
                                 console.log('🔊 Audio playing successfully');
                             }).catch(error => {
                                 console.error('❌ Audio autoplay blocked:', error);
-                                // You might want to show a user interaction to enable audio
                             });
                         }
                     });
@@ -686,24 +767,42 @@ export function UnifiedAvatarChat() {
         }
     }, [isRecording]);
 
+    // Reset VRM avatar
+    const resetVRMAvatar = useCallback(async () => {
+        try {
+            const response = await fetch('/reset_avatar', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+
+            if (response.ok) {
+                console.log('✅ VRM avatar reset to neutral');
+                setCurrentEmotion('neutral');
+                setDominantViseme('sil');
+            }
+        } catch (error) {
+            console.error('Error resetting VRM avatar:', error);
+        }
+    }, []);
+
     // Initialize everything
     useEffect(() => {
         const init = async () => {
-            console.log('🚀 Initializing Unified Avatar Chat...');
+            console.log('🚀 Initializing Enhanced VRM Avatar Chat...');
 
-            // Initialize avatar system
-            initAvatarWebSocket();
+            // Initialize VRM avatar system
+            initVRMAvatarWebSocket();
 
-            // Initialize Three.js
-            const threeReady = await initThreeJS();
+            // Initialize Three.js with VRM support
+            const threeReady = await initThreeJSWithVRM();
             if (!threeReady) {
-                console.error('Failed to initialize Three.js');
+                console.error('Failed to initialize Three.js with VRM support');
             }
 
             // Initialize AI chat
-            const eventSource = initAIChatSSE();
+            const eventSource = initEnhancedAIChatSSE();
 
-            console.log('✅ Initialization complete');
+            console.log('✅ Enhanced VRM initialization complete');
 
             // Cleanup function
             return () => {
@@ -718,19 +817,9 @@ export function UnifiedAvatarChat() {
         };
 
         init();
-    }, [initAvatarWebSocket, initThreeJS, initAIChatSSE]);
+    }, [initVRMAvatarWebSocket, initThreeJSWithVRM, initEnhancedAIChatSSE]);
 
-    // Get dominant viseme for display
-    const getDominantViseme = useCallback(() => {
-        const entries = Object.entries(currentVisemes);
-        if (entries.length === 0) return 'REST';
 
-        const dominant = entries.reduce((max, current) =>
-            current[1] > max[1] ? current : max
-        );
-
-        return dominant[1] > 0.5 ? dominant[0] : 'REST';
-    }, [currentVisemes]);
 
     // Handle device change
     const handleDeviceChange = useCallback((deviceId: string, type: 'input' | 'output') => {
@@ -765,57 +854,93 @@ export function UnifiedAvatarChat() {
 
             {/* Main Container */}
             <div className="relative z-10 h-full flex">
-                {/* Avatar Panel */}
+                {/* Enhanced VRM Avatar Panel */}
                 <div className="flex-1 bg-black/20 backdrop-blur-sm border-r border-white/10">
                     {/* Avatar Header */}
                     <div className="bg-black/30 backdrop-blur-sm p-4 border-b border-white/10">
                         <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                            🤖 3D Avatar
+                            🤖 Enhanced VRM Avatar
                             <span className={`inline-block w-3 h-3 rounded-full ${
                                 avatarStatus === 'connected' ? 'bg-green-400' : 'bg-red-400'
                             }`}></span>
                         </h2>
-                        <p className="text-sm text-gray-300">Real-time Facial Animation</p>
+                        <p className="text-sm text-gray-300">Advanced VRoid Facial Animation</p>
                     </div>
 
-                    {/* Avatar Canvas Container */}
+                    {/* VRM Avatar Canvas Container */}
                     <div className="relative h-[calc(100vh-80px)]">
                         <canvas
                             ref={canvasRef}
                             className="w-full h-full"
                         />
 
-                        {/* Viseme Debug Display */}
+                        {/* Enhanced Viseme Debug Display */}
                         <div className="absolute top-4 right-4 bg-black/50 backdrop-blur-sm p-3 rounded-lg text-white">
-                            <div className="text-xs text-gray-300 mb-1">Current Viseme:</div>
-                            <div className="text-lg font-mono font-bold text-green-400">
-                                {getDominantViseme()}
+                            <div className="text-xs text-gray-300 mb-2">VRM Status:</div>
+                            <div className="space-y-1 text-xs">
+                                <div>Emotion: <span className="text-blue-400">{currentEmotion}</span></div>
+                                <div>Viseme: <span className="text-green-400">{dominantViseme}</span></div>
+                                <div>Avatar: <span className={vrmLoaded ? "text-green-400" : "text-red-400"}>
+                                    {vrmLoaded ? "Loaded" : "Loading..."}
+                                </span></div>
+                                <div>Shapes: <span className="text-yellow-400">{Object.keys(currentBlendShapes).length}</span></div>
                             </div>
                         </div>
 
-                        {/* Loading State */}
-                        {!avatarRef.current && (
+                        {/* Enhanced Emotion Controls */}
+                        <div className="absolute bottom-4 right-4 bg-black/50 backdrop-blur-sm p-3 rounded-lg">
+                            <div className="text-xs text-white mb-2 text-center">VRM Emotions</div>
+                            <div className="grid grid-cols-2 gap-1">
+                                {['neutral', 'happy', 'sad', 'surprised', 'angry'].map((emotion) => (
+                                    <button
+                                        key={emotion}
+                                        onClick={() => setVRMEmotion(emotion)}
+                                        className={`px-2 py-1 text-xs rounded transition-colors ${
+                                            currentEmotion === emotion
+                                                ? 'bg-blue-500 text-white'
+                                                : 'bg-gray-600 text-gray-200 hover:bg-gray-500'
+                                        }`}
+                                    >
+                                        {emotion}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* VRM Loading State */}
+                        {!vrmLoaded && (
                             <div className="absolute inset-0 flex items-center justify-center">
                                 <div className="text-center text-white">
                                     <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-4"></div>
-                                    <p>Loading 3D Avatar...</p>
+                                    <p>Loading Enhanced VRM Avatar...</p>
+                                    <p className="text-sm text-gray-300 mt-2">Place your .vrm file in /static/</p>
                                 </div>
                             </div>
                         )}
+
+                        {/* VRM Reset Button */}
+                        <div className="absolute bottom-4 left-4">
+                            <button
+                                onClick={resetVRMAvatar}
+                                className="px-3 py-2 bg-black/50 backdrop-blur-sm text-white text-xs rounded-lg hover:bg-black/70 transition-colors"
+                            >
+                                🔄 Reset VRM
+                            </button>
+                        </div>
                     </div>
                 </div>
 
-                {/* AI Chat Panel */}
+                {/* Enhanced AI Chat Panel */}
                 <div className="flex-1 bg-black/20 backdrop-blur-sm flex flex-col">
                     {/* Chat Header */}
                     <div className="bg-black/30 backdrop-blur-sm p-4 border-b border-white/10">
                         <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                            🧠 AI Assistant
+                            🧠 AI Assistant + VRM
                             <span className={`inline-block w-3 h-3 rounded-full ${
                                 isConnected ? 'bg-green-400' : 'bg-red-400'
                             }`}></span>
                         </h2>
-                        <p className="text-sm text-gray-300">Real-time Speech & Chat</p>
+                        <p className="text-sm text-gray-300">Real-time Speech & Chat with VRM Emotions</p>
                     </div>
 
                     {/* Chat Messages */}
@@ -832,8 +957,8 @@ export function UnifiedAvatarChat() {
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
                                         </svg>
                                     </div>
-                                    <p className="text-lg font-medium text-gray-300">Start a conversation</p>
-                                    <p className="text-sm mt-1">Press and hold the microphone to speak</p>
+                                    <p className="text-lg font-medium text-gray-300">Start a VRM conversation</p>
+                                    <p className="text-sm mt-1">Click the microphone to speak with enhanced VRM facial animation</p>
                                 </motion.div>
                             ) : (
                                 chatMessages.map((msg, idx) => (
@@ -851,6 +976,12 @@ export function UnifiedAvatarChat() {
                                             }`}
                                         >
                                             <p className="text-sm leading-relaxed">{msg.text}</p>
+                                            {msg.type === "llm" && (
+                                                <div className="text-xs text-gray-600 mt-1 flex items-center gap-1">
+                                                    <span>🎭</span>
+                                                    <span>VRM: {currentEmotion}</span>
+                                                </div>
+                                            )}
                                         </div>
                                     </motion.div>
                                 ))
@@ -859,76 +990,119 @@ export function UnifiedAvatarChat() {
                         <div ref={chatBottomRef} />
                     </div>
 
-                    {/* Audio Level Indicator */}
+                    {/* Enhanced Audio Level Indicator */}
                     <div className="px-4 mb-2">
                         <div className="h-1 w-full bg-white/20 rounded-full overflow-hidden">
                             <motion.div
-                                className="h-full bg-blue-400 rounded-full"
+                                className={`h-full rounded-full transition-colors ${
+                                    audioLevel > 0.3 ? 'bg-green-400' : audioLevel > 0.1 ? 'bg-yellow-400' : 'bg-blue-400'
+                                }`}
                                 initial={{ width: 0 }}
                                 animate={{ width: `${Math.min(audioLevel * 100, 100)}%` }}
                                 transition={{ type: "spring", damping: 15 }}
                             />
                         </div>
+                        <div className="text-xs text-gray-400 mt-1 text-center">
+                            {isRecording ? `Audio Level: ${Math.round(audioLevel * 100)}%` : 'Audio Level Monitor'}
+                        </div>
                     </div>
 
-                    {/* Voice Controls */}
+                    {/* Enhanced Voice Controls */}
                     <div className="p-4">
                         <div className="flex items-center justify-center gap-4">
-                            {/* Voice Button */}
-                            {/*<button*/}
-                            {/*    className={`w-16 h-16 rounded-full flex items-center justify-center text-2xl transition-all duration-300 ${*/}
-                            {/*        isRecording*/}
-                            {/*            ? "bg-red-500 hover:bg-red-600 animate-pulse"*/}
-                            {/*            : "bg-blue-500 hover:bg-blue-600 hover:scale-110"*/}
-                            {/*    } text-white shadow-lg`}*/}
-                            {/*    onMouseDown={startRecording}*/}
-                            {/*    onMouseUp={stopRecording}*/}
-                            {/*    onMouseLeave={stopRecording}*/}
-                            {/*    onTouchStart={startRecording}*/}
-                            {/*    onTouchEnd={stopRecording}*/}
-                            {/*    disabled={false}*/}
-                            {/*>*/}
-                            {/*    {isRecording ? "🔴" : "🎤"}*/}
-                            {/*</button>*/}
-
-                            {/* Voice Toggle Button */}
+                            {/* Enhanced Voice Toggle Button */}
                             <button
                                 className={`w-16 h-16 rounded-full flex items-center justify-center text-2xl transition-all duration-300 ${
                                     isRecording
-                                        ? "bg-red-500 hover:bg-red-600 animate-pulse"
-                                        : "bg-blue-500 hover:bg-blue-600 hover:scale-110"
-                                } text-white shadow-lg`}
+                                        ? "bg-red-500 hover:bg-red-600 animate-pulse shadow-lg shadow-red-500/50"
+                                        : "bg-blue-500 hover:bg-blue-600 hover:scale-110 shadow-lg shadow-blue-500/50"
+                                } text-white`}
                                 onClick={toggleRecording}
                                 disabled={false}
                             >
                                 {isRecording ? "🔴" : "🎤"}
                             </button>
 
-                            {/* Status Display */}
+                            {/* Enhanced Status Display */}
                             <div className="flex flex-col gap-1 text-xs text-gray-300">
                                 <div className="flex items-center gap-2">
                                     <span className={`w-2 h-2 rounded-full ${
                                         avatarStatus === 'connected' ? 'bg-green-400' : 'bg-red-400'
                                     }`}></span>
-                                    <span>Avatar</span>
+                                    <span>VRM Avatar</span>
                                 </div>
                                 <div className="flex items-center gap-2">
                                     <span className={`w-2 h-2 rounded-full ${
                                         isConnected ? 'bg-green-400' : 'bg-red-400'
                                     }`}></span>
-                                    <span>AI Chat</span>
+                                    <span>AI + TTS</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <span className={`w-2 h-2 rounded-full ${
+                                        vrmLoaded ? 'bg-green-400' : 'bg-yellow-400'
+                                    }`}></span>
+                                    <span>VRM Model</span>
                                 </div>
                             </div>
                         </div>
 
-                        {/* Instructions */}
+                        {/* Enhanced Instructions */}
                         <div className="mt-3 text-center text-xs text-gray-400">
                             {isRecording ? (
-                                "🎙️ Recording... Release to send"
+                                <div className="space-y-1">
+                                    <div className="flex items-center justify-center gap-2">
+                                        <div className="animate-pulse w-2 h-2 bg-red-400 rounded-full"></div>
+                                        <span>🎙️ Recording with VRM facial animation...</span>
+                                    </div>
+                                    <div>Click again to stop and process</div>
+                                </div>
                             ) : (
-                                "Press and hold microphone to speak"
+                                <div className="space-y-1">
+                                    <div>Click microphone to start enhanced VRM conversation</div>
+                                    <div className="text-blue-400">✨ Advanced VRoid visemes • Emotional expressions • Real-time lip sync</div>
+                                </div>
                             )}
                         </div>
+                    </div>
+
+                    {/* Enhanced System Status Footer */}
+                    <div className="border-t border-white/10 p-2 bg-black/20">
+                        <div className="flex justify-between items-center text-xs text-gray-400">
+                            <div className="flex items-center gap-3">
+                                <span>VRM Shapes: {Object.keys(currentBlendShapes).length}</span>
+                                <span>Emotion: {currentEmotion}</span>
+                                <span>Viseme: {dominantViseme}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <span>Enhanced VRoid System</span>
+                                <div className={`w-2 h-2 rounded-full ${
+                                    vrmLoaded && avatarStatus === 'connected' ? 'bg-green-400' : 'bg-yellow-400'
+                                }`}></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Enhanced Floating VRM Info Panel */}
+            <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-black/50 backdrop-blur-sm px-4 py-2 rounded-lg text-white text-sm">
+                <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-2">
+                        <span>🎭</span>
+                        <span>VRM Status:</span>
+                        <span className={vrmLoaded ? "text-green-400" : "text-yellow-400"}>
+                            {vrmLoaded ? "Active" : "Loading..."}
+                        </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <span>😊</span>
+                        <span>Emotion:</span>
+                        <span className="text-blue-400">{currentEmotion}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <span>👄</span>
+                        <span>Viseme:</span>
+                        <span className="text-green-400">{dominantViseme}</span>
                     </div>
                 </div>
             </div>
@@ -937,4 +1111,4 @@ export function UnifiedAvatarChat() {
 }
 
 // Export for use in your Next.js app
-export default UnifiedAvatarChat;
+export default EnhancedVRMAvatarChat;

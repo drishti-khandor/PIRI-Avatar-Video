@@ -1,6 +1,6 @@
 """
-Unified Backend Server - Combines 3D Avatar and Real-time AI Chat
-Merges fixed_camera_avatar.py and main.py into a single FastAPI server
+CORRECTED unified_server.py WITH VRM SUPPORT
+This integrates the advanced VRoid viseme system for natural facial animation with VRM files
 """
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -31,6 +31,9 @@ from openai import AzureOpenAI
 # Viseme extractor
 from viseme_extractor import VisemeExtractor, AdvancedVisemeExtractor
 
+# IMPORT THE NEW ENHANCED VISEME SYSTEM
+from vroid_viseme_integration import EnhancedVRoidVisemeController, enhanced_process_audio_and_respond, detect_emotion_from_text
+
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -51,7 +54,7 @@ if platform.system() == 'Windows':
 load_dotenv()
 
 # Initialize FastAPI app
-app = FastAPI(title="Unified 3D Avatar + AI Chat Server")
+app = FastAPI(title="Enhanced 3D VRM Avatar + AI Chat Server with Advanced VRoid Visemes")
 
 app.add_middleware(
     CORSMiddleware,
@@ -65,130 +68,15 @@ app.add_middleware(
 os.makedirs("static", exist_ok=True)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
+# =====================================================
+# ENHANCED AVATAR SYSTEM with Advanced VRoid Visemes
+# =====================================================
+
+# Initialize the enhanced viseme controller
+enhanced_viseme_controller = EnhancedVRoidVisemeController()
 
 # =====================================================
-# AVATAR SYSTEM - From fixed_camera_avatar.py
-# =====================================================
-
-class VisemeController:
-    def __init__(self):
-        self.active_connections: List[WebSocket] = []
-        self.current_visemes = {
-            'A': 0.0, 'E': 0.0, 'I': 0.0, 'O': 0.0, 'U': 0.0, 'M': 0.0, 'REST': 1.0
-        }
-
-        # Viseme mapping for avatar
-        # self.VISEME_MAP = {
-        #     'A': ['aa', 'Fcl_MTH_A'],
-        #     'E': ['ee', 'Fcl_MTH_E'],
-        #     'I': ['ih', 'Fcl_MTH_I'],
-        #     'O': ['oh', 'Fcl_MTH_O'],
-        #     'U': ['ou', 'Fcl_MTH_U'],
-        #     'M': ['pp', 'Fcl_MTH_Close'],
-        #     'REST': ['neutral', 'Fcl_MTH_Neutral']
-        # }
-        self.VISEME_MAP = {
-            'A': ['Fcl_MTH_A'],  # Remove 'aa'
-            'E': ['Fcl_MTH_E'],  # Remove 'ee'
-            'I': ['Fcl_MTH_I'],  # Remove 'ih'
-            'O': ['Fcl_MTH_O'],  # Remove 'oh'
-            'U': ['Fcl_MTH_U'],  # Remove 'ou'
-            'M': ['Fcl_MTH_Close'],  # Remove 'pp'
-            'REST': ['Fcl_MTH_Neutral']  # Remove 'neutral'
-        }
-
-    async def connect(self, websocket: WebSocket):
-        await websocket.accept()
-        self.active_connections.append(websocket)
-        logger.info(f"✅ Avatar client connected. Total: {len(self.active_connections)}")
-
-    def disconnect(self, websocket: WebSocket):
-        if websocket in self.active_connections:
-            self.active_connections.remove(websocket)
-            logger.info(f"❌ Avatar client disconnected. Total: {len(self.active_connections)}")
-
-    async def broadcast_viseme_update(self):
-        if not self.active_connections:
-            logger.info("❌ No avatar connections to broadcast to")  # ADD THIS
-            return
-
-        blend_shapes = {}
-        for viseme, weight in self.current_visemes.items():
-            blend_shape_names = self.VISEME_MAP.get(viseme, [])
-            for blend_name in blend_shape_names:
-                blend_shapes[blend_name] = weight
-
-        message = {
-            "type": "viseme_update",
-            "visemes": self.current_visemes,
-            "blend_shapes": blend_shapes,
-            "timestamp": time.time()
-        }
-
-        logger.info(f"📡 Broadcasting to {len(self.active_connections)} connections: {blend_shapes}")  # ADD THIS
-
-        disconnected = []
-        for connection in self.active_connections:
-            try:
-                await connection.send_text(json.dumps(message))
-            except:
-                disconnected.append(connection)
-
-        for connection in disconnected:
-            self.disconnect(connection)
-
-    async def update_viseme(self, viseme: str, value: float):
-        if viseme in self.current_visemes:
-            self.current_visemes[viseme] = max(0.0, min(1.0, value))
-            await self.broadcast_viseme_update()
-
-    async def update_from_ai_visemes(self, ai_visemes: List[Dict]):
-        """Convert AI-generated visemes to avatar visemes"""
-        # Reset all visemes
-        for v in self.current_visemes:
-            self.current_visemes[v] = 0.0
-        self.current_visemes['REST'] = 1.0
-
-        # Map AI visemes (numbers) to avatar visemes (letters)
-        viseme_mapping = {
-            '0': 'REST',  # Silence
-            '1': 'A',  # Open vowels
-            '2': 'A',  # Open back vowels
-            '3': 'E',  # Diphthongs
-            '4': 'E',  # R-colored vowels
-            '5': 'I',  # Close front vowels
-            '6': 'U',  # Close back vowels
-            '7': 'M',  # Bilabials
-            '8': 'E',  # Labiodentals
-            '9': 'E',  # Dental fricatives
-            '10': 'REST',  # Alveolars
-            '11': 'E',  # Sibilants
-            '12': 'O',  # Post-alveolars
-            '13': 'REST',  # Velars
-            '14': 'O',  # Approximants
-        }
-
-        # Apply strongest viseme
-        if ai_visemes:
-            # Get the most recent/dominant viseme
-            current_viseme = ai_visemes[0]
-            ai_viseme_id = str(current_viseme.get('viseme', '0'))
-            avatar_viseme = viseme_mapping.get(ai_viseme_id, 'REST')
-            logger.info(f"🎭 Converting AI viseme '{ai_viseme_id}' to avatar viseme '{avatar_viseme}'")  # ADD THIS
-
-            # Reset all and set the current one
-            for v in self.current_visemes:
-                self.current_visemes[v] = 0.0
-            self.current_visemes[avatar_viseme] = 1.0
-        logger.info(f"🎨 Final avatar visemes: {self.current_visemes}")  # ADD THIS
-        await self.broadcast_viseme_update()
-
-
-# Global viseme controller
-viseme_controller = VisemeController()
-
-# =====================================================
-# AI SYSTEM - From main.py
+# AI SYSTEM - Enhanced with Advanced Viseme Integration
 # =====================================================
 
 # Environment setup for Azure OpenAI
@@ -198,7 +86,7 @@ deployment_name = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME")
 api_version = os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-15-preview")
 
 # System prompt
-sys_prompt = """You are a helpful AI assistant with a 3D avatar. Keep responses concise and natural for speech synthesis."""
+sys_prompt = """You are a helpful AI assistant with a 3D VRM avatar. Keep responses concise and natural for speech synthesis. Express emotions appropriately."""
 messages = [{"role": "system", "content": sys_prompt}]
 
 # Initialize AI models
@@ -223,212 +111,9 @@ except:
     viseme_extractor = VisemeExtractor()
     logger.info("Using basic viseme extractor")
 
-
 def process_audio_and_respond(audio):
-    """Main AI processing function - handles STT, LLM, TTS, and visemes"""
-
-    # Speech-to-Text
-    stt_time = time.time()
-    logger.info("Performing STT")
-    text = stt_model.stt(audio)
-    if not text:
-        logger.info("STT returned empty string")
-        return
-
-    logger.info(f"STT response: {text}")
-    yield AdditionalOutputs({"type": "stt", "text": text})
-
-    messages.append({"role": "user", "content": text})
-    logger.info(f"STT took {time.time() - stt_time} seconds")
-
-    # LLM Generation
-    llm_time = time.time()
-    try:
-        if openai_client:
-            response = openai_client.chat.completions.create(
-                model=deployment_name,
-                messages=messages,
-                max_tokens=200,
-                temperature=0.7,
-            )
-            full_response = response.choices[0].message.content
-        else:
-            full_response = "AI service not configured. Please check your environment variables."
-    except Exception as e:
-        logger.error(f"LLM generation failed: {e}")
-        full_response = "I'm having trouble processing that right now."
-
-    logger.info(f"LLM response: {full_response}")
-    logger.info(f"LLM took {time.time() - llm_time} seconds")
-    yield AdditionalOutputs({"type": "llm", "text": full_response})
-
-    # TTS with Viseme Extraction
-    logger.info("Starting TTS streaming with viseme extraction.")
-    chunk_index = 0
-    accumulated_time = 0.0
-
-    try:
-        for sample_rate, audio_chunk in tts_model.stream_tts_sync(full_response):
-            # Calculate timing for this chunk
-            chunk_duration = len(audio_chunk) / sample_rate
-            chunk_start_time = accumulated_time
-            accumulated_time += chunk_duration
-
-            # Extract visemes from this audio chunk
-            try:
-                visemes = viseme_extractor.extract_visemes_from_chunk(audio_chunk, sample_rate)
-
-                # Adjust viseme timing to global timeline
-                for viseme in visemes:
-                    viseme.start_time += chunk_start_time
-                    viseme.end_time += chunk_start_time
-
-                # Send viseme data to frontend
-                viseme_data = {
-                    "type": "visemes",
-                    "chunk_index": chunk_index,
-                    "visemes": [
-                        {
-                            "viseme": str(v.viseme),
-                            "start_time": float(v.start_time),
-                            "end_time": float(v.end_time),
-                            "confidence": float(v.confidence)
-                        }
-                        for v in visemes
-                    ],
-                    "chunk_duration": float(chunk_duration),
-                    "chunk_start_time": float(chunk_start_time)
-                }
-
-                logging.info(f"Sent visemes for chunk {chunk_index}: {[(v.viseme, v.start_time, v.end_time, v.confidence) for v in visemes]}")
-                yield AdditionalOutputs(viseme_data)
-                logging.info(f"Sent visemes for chunk {chunk_index}: {[v.viseme for v in visemes]}")
-                # ADD THIS LINE:
-                # await viseme_controller.update_from_ai_visemes(viseme_data["visemes"])
-                # try:
-                #     loop = asyncio.get_event_loop()
-                #     if loop.is_running():
-                #         # If loop is running, schedule the coroutine
-                #         asyncio.run_coroutine_threadsafe(
-                #             viseme_controller.update_from_ai_visemes(viseme_data["visemes"]),
-                #             loop
-                #         )
-                #     else:
-                #         # If no loop running, run it directly
-                #         loop.run_until_complete(
-                #             viseme_controller.update_from_ai_visemes(viseme_data["visemes"])
-                #         )
-                # except Exception as e:
-                #     logging.error(f"Failed to update avatar visemes: {e}")
-
-                def update_avatar_async():
-                    import asyncio
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                    try:
-                        loop.run_until_complete(
-                            viseme_controller.update_from_ai_visemes(viseme_data["visemes"])
-                        )
-                    finally:
-                        loop.close()
-
-                # Start in background thread
-                threading.Thread(target=update_avatar_async, daemon=True).start()
-
-                yield sample_rate, audio_chunk
-
-                chunk_index += 1
-
-            except Exception as e:
-                logging.error(f"Viseme extraction failed for chunk {chunk_index}: {e}")
-                # Send default silence viseme
-                yield AdditionalOutputs({
-                    "type": "visemes",
-                    "chunk_index": chunk_index,
-                    "visemes": [{"viseme": "0", "start_time": chunk_start_time, "end_time": accumulated_time,
-                                 "confidence": 1.0}],
-                    "chunk_duration": chunk_duration,
-                    "chunk_start_time": chunk_start_time
-                })
-
-            # Yield the audio chunk for playback
-            # yield sample_rate, audio_chunk
-            #
-            # chunk_index += 1
-
-        logging.info("Finished TTS streaming with visemes.")
-
-    except Exception as e:
-        logging.error(f"TTS failed: {e}")
-
-    messages.append({"role": "assistant", "content": full_response + " "})
-
-
-    # try:
-    #     for audio_chunk in tts_model.stream_tts_sync(full_response):
-    #         yield audio_chunk
-    #         # Calculate timing for this chunk
-    #     #     chunk_duration = len(audio_chunk) / sample_rate
-    #     #     chunk_start_time = accumulated_time
-    #     #     accumulated_time += chunk_duration
-    #     #
-    #     #     # Extract visemes from this audio chunk
-    #     #     try:
-    #     #         visemes = viseme_extractor.extract_visemes_from_chunk(audio_chunk, sample_rate)
-    #     #
-    #     #         # Adjust viseme timing to global timeline
-    #     #         for viseme in visemes:
-    #     #             viseme.start_time += chunk_start_time
-    #     #             viseme.end_time += chunk_start_time
-    #     #
-    #     #         # Send viseme data to frontend AND update avatar
-    #     #         viseme_data = {
-    #     #             "type": "visemes",
-    #     #             "chunk_index": chunk_index,
-    #     #             "visemes": [
-    #     #                 {
-    #     #                     "viseme": str(v.viseme),
-    #     #                     "start_time": float(v.start_time),
-    #     #                     "end_time": float(v.end_time),
-    #     #                     "confidence": float(v.confidence)
-    #     #                 }
-    #     #                 for v in visemes
-    #     #             ],
-    #     #             "chunk_duration": float(chunk_duration),
-    #     #             "chunk_start_time": float(chunk_start_time)
-    #     #         }
-    #     #
-    #     #         # Update avatar in real-time
-    #     #         asyncio.create_task(
-    #     #             viseme_controller.update_from_ai_visemes(viseme_data["visemes"])
-    #     #         )
-    #     #
-    #     #         logger.info(f"Sent visemes for chunk {chunk_index}: {[v.viseme for v in visemes]}")
-    #     #         yield AdditionalOutputs(viseme_data)
-    #     #
-    #     #     except Exception as e:
-    #     #         logger.error(f"Viseme extraction failed for chunk {chunk_index}: {e}")
-    #     #         # Send default silence viseme
-    #     #         yield AdditionalOutputs({
-    #     #             "type": "visemes",
-    #     #             "chunk_index": chunk_index,
-    #     #             "visemes": [{"viseme": "0", "start_time": chunk_start_time, "end_time": accumulated_time,
-    #     #                          "confidence": 1.0}],
-    #     #             "chunk_duration": chunk_duration,
-    #     #             "chunk_start_time": chunk_start_time
-    #     #         })
-    #     #
-    #     #     # Yield the audio chunk for playback
-    #     #     yield sample_rate, audio_chunk
-    #     #     chunk_index += 1
-    #     #
-    #     logger.info("Finished TTS streaming with visemes.")
-    #
-    # except Exception as e:
-    #     logger.error(f"TTS failed: {e}")
-    #
-    # messages.append({"role": "assistant", "content": full_response + " "})
-
+    """Enhanced audio processing with advanced VRoid visemes"""
+    return enhanced_process_audio_and_respond(audio, enhanced_viseme_controller)
 
 # Initialize FastRTC stream
 stream = Stream(ReplyOnPause(
@@ -453,7 +138,6 @@ stream = Stream(ReplyOnPause(
 # Mount FastRTC stream to app
 stream.mount(app)
 
-
 # =====================================================
 # PYDANTIC MODELS
 # =====================================================
@@ -463,23 +147,28 @@ class PhonemeItem(BaseModel):
     start: float
     end: float
 
-
 class PhonemeSeq(BaseModel):
     items: List[PhonemeItem]
 
+class EmotionRequest(BaseModel):
+    emotion: str
+
+class VisemeRequest(BaseModel):
+    phoneme: str
+    emotion: str = "neutral"
 
 # =====================================================
-# API ENDPOINTS
+# ENHANCED API ENDPOINTS
 # =====================================================
 
 @app.get("/", response_class=HTMLResponse)
 async def get_unified_interface():
-    """Unified HTML interface combining avatar and chat"""
+    """Enhanced unified interface with VRM avatar support"""
     return '''
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Unified 3D Avatar + AI Chat</title>
+    <title>Enhanced 3D VRM Avatar + AI Chat with Advanced Visemes</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { 
@@ -496,7 +185,6 @@ async def get_unified_interface():
             gap: 2px;
         }
 
-        /* Avatar Panel */
         .avatar-panel {
             flex: 1;
             background: #1a1a1a;
@@ -530,7 +218,6 @@ async def get_unified_interface():
             max-height: 100%;
         }
 
-        /* AI Chat Panel */
         .ai-panel {
             flex: 1;
             background: #2d2d2d;
@@ -653,41 +340,90 @@ async def get_unified_interface():
             position: absolute;
             top: 20px;
             right: 20px;
-            background: rgba(0, 0, 0, 0.7);
-            padding: 10px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 15px;
             border-radius: 8px;
             font-size: 12px;
-            min-width: 100px;
+            min-width: 200px;
         }
 
-        /* Responsive Design */
-        @media (max-width: 768px) {
-            .main-container {
-                flex-direction: column;
-            }
+        .emotion-controls {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 10px;
+            border-radius: 8px;
+            display: flex;
+            gap: 5px;
+            flex-wrap: wrap;
+        }
 
-            .avatar-panel, .ai-panel {
-                border-radius: 0;
-            }
+        .emotion-btn {
+            padding: 5px 10px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 10px;
+            transition: all 0.3s ease;
+        }
+
+        .emotion-btn:hover {
+            background: #764ba2;
+        }
+
+        .emotion-btn.active {
+            background: #4ade80;
+        }
+
+        .vrm-status {
+            position: absolute;
+            bottom: 80px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 10px;
+            border-radius: 8px;
+            font-size: 10px;
+            color: #4ade80;
         }
     </style>
 </head>
 <body>
     <div class="main-container">
-        <!-- Avatar Panel -->
+        <!-- VRM Avatar Panel -->
         <div class="avatar-panel">
             <div class="avatar-header">
-                <h2>🤖 3D Avatar</h2>
-                <p>Real-time Facial Animation</p>
+                <h2>🤖 Enhanced VRM Avatar</h2>
+                <p>Advanced VRoid Facial Animation with Natural Lip Sync</p>
             </div>
 
             <div class="avatar-canvas-container">
                 <canvas id="avatarCanvas"></canvas>
 
-                <!-- Viseme Debug Display -->
+                <!-- Enhanced Viseme Debug Display -->
                 <div class="viseme-debug" id="visemeDebug">
-                    <div>Current Viseme:</div>
-                    <div id="currentViseme">REST</div>
+                    <div><strong>VRM Avatar State:</strong></div>
+                    <div>Emotion: <span id="currentEmotion">neutral</span></div>
+                    <div>Blend Shapes: <span id="activeBlendShapes">0</span></div>
+                    <div>Status: <span id="avatarConnectionStatus">Connecting...</span></div>
+                    <div>Dominant: <span id="dominantViseme">sil</span></div>
+                </div>
+
+                <!-- VRM Status Indicator -->
+                <div class="vrm-status" id="vrmStatus">
+                    🎭 VRM Model Ready
+                </div>
+
+                <!-- Emotion Controls -->
+                <div class="emotion-controls">
+                    <div style="color: white; font-size: 10px; width: 100%; text-align: center; margin-bottom: 5px;">VRM Emotions:</div>
+                    <button class="emotion-btn active" onclick="setEmotion('neutral')">😐 Neutral</button>
+                    <button class="emotion-btn" onclick="setEmotion('happy')">😊 Happy</button>
+                    <button class="emotion-btn" onclick="setEmotion('sad')">😢 Sad</button>
+                    <button class="emotion-btn" onclick="setEmotion('surprised')">😲 Surprised</button>
+                    <button class="emotion-btn" onclick="setEmotion('angry')">😠 Angry</button>
                 </div>
             </div>
         </div>
@@ -696,13 +432,13 @@ async def get_unified_interface():
         <div class="ai-panel">
             <div class="ai-header">
                 <h2>🧠 AI Assistant</h2>
-                <p>Real-time Speech & Chat</p>
+                <p>Real-time Speech & Chat with VRM Emotional Expression</p>
             </div>
 
             <div class="chat-container">
                 <div class="messages-area" id="messagesArea">
                     <div class="message ai">
-                        <strong>AI:</strong> Hello! I'm ready to chat. Press and hold the microphone button to speak with me. I'll respond with both voice and synchronized facial animations.
+                        <strong>AI:</strong> Hello! I'm ready to chat with enhanced VRM facial expressions and natural lip sync. Place your VRM file as /static/avatar.vrm to get started!
                     </div>
                 </div>
 
@@ -710,21 +446,21 @@ async def get_unified_interface():
                     <button class="voice-btn" id="voiceBtn">🎤</button>
                     <div class="status-display">
                         <div class="status-item">
-                            <span>Avatar:</span>
+                            <span>Enhanced VRM Avatar:</span>
                             <div style="display: flex; align-items: center; gap: 5px;">
                                 <div class="status-dot" id="avatarStatus"></div>
                                 <span>Ready</span>
                             </div>
                         </div>
                         <div class="status-item">
-                            <span>AI:</span>
+                            <span>AI + VRM Emotions:</span>
                             <div style="display: flex; align-items: center; gap: 5px;">
                                 <div class="status-dot" id="aiStatus"></div>
                                 <span>Ready</span>
                             </div>
                         </div>
                         <div class="status-item">
-                            <span>Audio:</span>
+                            <span>Advanced VRM Visemes:</span>
                             <div style="display: flex; align-items: center; gap: 5px;">
                                 <div class="status-dot" id="audioStatus"></div>
                                 <span>Ready</span>
@@ -740,7 +476,8 @@ async def get_unified_interface():
     {
         "imports": {
             "three": "https://unpkg.com/three@0.158.0/build/three.module.js",
-            "three/addons/": "https://unpkg.com/three@0.158.0/examples/jsm/"
+            "three/addons/": "https://unpkg.com/three@0.158.0/examples/jsm/",
+            "@pixiv/three-vrm": "https://unpkg.com/@pixiv/three-vrm@2.0.6/lib/three-vrm.module.js"
         }
     }
     </script>
@@ -748,26 +485,44 @@ async def get_unified_interface():
     <script type="module">
         import * as THREE from 'three';
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
 
         // Global variables
         let scene, camera, renderer, gltfLoader;
         let avatar = null;
+        let vrm = null;
         let avatarWebSocket = null;
         let webrtcClient = null;
         let isRecording = false;
         let webrtcId = Math.random().toString(36).substring(7);
 
-        const BLEND_SHAPE_MAP = {
-            'A': ['aa', 'Fcl_MTH_A'],
-            'E': ['ee', 'Fcl_MTH_E'], 
-            'I': ['ih', 'Fcl_MTH_I'],
-            'O': ['oh', 'Fcl_MTH_O'],
-            'U': ['ou', 'Fcl_MTH_U'],
-            'M': ['pp', 'Fcl_MTH_Close'],
-            'REST': ['neutral', 'Fcl_MTH_Neutral']
+        // Enhanced VRoid blend shape mapping for VRM files
+        const ENHANCED_VRM_BLEND_SHAPES = {
+            'Fcl_MTH_A': 'mouth_open_wide',
+            'Fcl_MTH_E': 'mouth_smile', 
+            'Fcl_MTH_I': 'mouth_narrow',
+            'Fcl_MTH_O': 'mouth_round',
+            'Fcl_MTH_U': 'mouth_pucker',
+            'Fcl_MTH_Close': 'mouth_closed',
+            'Fcl_MTH_Neutral': 'mouth_neutral',
+            'Fcl_MTH_Small': 'mouth_small',
+            'Fcl_MTH_Large': 'mouth_large',
+            'Fcl_MTH_Fun': 'mouth_fun',
+            'Fcl_MTH_Down': 'mouth_down',
+            'Fcl_ALL_Joy': 'expression_joy',
+            'Fcl_ALL_Sorrow': 'expression_sad',
+            'Fcl_ALL_Surprised': 'expression_surprised',
+            'Fcl_ALL_Angry': 'expression_angry',
+            'Fcl_ALL_Neutral': 'expression_neutral',
+            'Fcl_EYE_Natural': 'eye_natural',
+            'Fcl_EYE_Joy': 'eye_joy',
+            'Fcl_EYE_Sorrow': 'eye_sad',
+            'Fcl_EYE_Surprised': 'eye_surprised',
+            'Fcl_EYE_Angry': 'eye_angry',
+            'Fcl_BRW_Angry': 'brow_angry'
         };
 
-        // Initialize Avatar WebSocket
+        // Initialize Avatar WebSocket with VRM support
         async function initAvatarWebSocket() {
             try {
                 const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -775,28 +530,30 @@ async def get_unified_interface():
 
                 avatarWebSocket.onopen = () => {
                     updateStatus('avatarStatus', true);
-                    console.log('✅ Avatar WebSocket connected');
+                    console.log('✅ Enhanced VRM Avatar WebSocket connected');
+                    document.getElementById('avatarConnectionStatus').textContent = 'Connected';
                 };
 
                 avatarWebSocket.onmessage = (event) => {
                     const data = JSON.parse(event.data);
                     if (data.type === 'viseme_update') {
-                        applyBlendShapes(data.blend_shapes);
-                        updateVisemeDebug(data.visemes);
+                        applyEnhancedVRMBlendShapes(data.blend_shapes);
+                        updateEnhancedVisemeDebug(data);
                     }
                 };
 
                 avatarWebSocket.onclose = () => {
                     updateStatus('avatarStatus', false);
+                    document.getElementById('avatarConnectionStatus').textContent = 'Disconnected';
                     setTimeout(initAvatarWebSocket, 3000);
                 };
 
             } catch (error) {
-                console.error('Avatar WebSocket error:', error);
+                console.error('VRM Avatar WebSocket error:', error);
             }
         }
 
-        // Initialize Three.js for Avatar
+        // Initialize Three.js for VRM Avatar
         async function initThreeJS() {
             try {
                 const viewport = document.getElementById('avatarCanvas').parentElement;
@@ -805,15 +562,10 @@ async def get_unified_interface():
                 scene = new THREE.Scene();
                 scene.background = new THREE.Color(0x000000);
 
-                # camera = new THREE.PerspectiveCamera(50, aspect, 0.1, 1000);
-                # camera.position.set(0, 0, 1);
-                # camera.lookAt(0, 0, 0);
-                
-                // FIXED CAMERA - Uses your Blender setup
-                camera = new THREE.PerspectiveCamera(5, aspect, 0.1, 1000);
-                // Don't override camera position - use default/Blender position
-                camera.position.set(0, 0, 35); // Minimal distance for face focus
-                camera.lookAt(0, 0, 5); // Look at center
+                // Camera optimized for VRM face focus
+                camera = new THREE.PerspectiveCamera(35, aspect, 0.1, 1000);
+                camera.position.set(0, 0, 2);
+                camera.lookAt(0, 0, 0);
 
                 renderer = new THREE.WebGLRenderer({ 
                     canvas: document.getElementById('avatarCanvas'),
@@ -829,7 +581,7 @@ async def get_unified_interface():
                 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
                 renderer.outputColorSpace = THREE.SRGBColorSpace;
 
-                // Lighting
+                // Enhanced lighting for VRM models
                 const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 0.8);
                 scene.add(hemi);
 
@@ -841,91 +593,204 @@ async def get_unified_interface():
                 rim.position.set(0, 1, -2);
                 scene.add(rim);
 
+                // Initialize GLTF loader with VRM plugin
                 gltfLoader = new GLTFLoader();
+                gltfLoader.register((parser) => new VRMLoaderPlugin(parser));
 
                 window.addEventListener('resize', onWindowResize);
                 onWindowResize();
 
-                console.log('✅ Three.js initialized');
+                console.log('✅ Enhanced Three.js with VRM support initialized');
                 return true;
 
             } catch (error) {
-                console.error('Three.js error:', error);
+                console.error('Three.js VRM error:', error);
                 return false;
             }
         }
+        
+        async function loadVRMModel(path) {
+            return new Promise((resolve, reject) => {
+                gltfLoader.load(
+                    path,
+                    (gltf) => {
+                        // Convert GLTF to VRM
+                        VRMUtils.removeUnnecessaryVertices(gltf.scene);
+                        VRMUtils.removeUnnecessaryJoints(gltf.scene);
+        
+                        const vrmInstance = VRM.from(gltf);
+                        vrmInstance.then((loadedVrm) => {
+                            vrm = loadedVrm;           // Save to global `vrm` reference
+                            scene.add(vrm.scene);      // ✅ THIS is the critical part
+                            console.log("✅ VRM model added to scene");
+                            resolve(loadedVrm);
+                        });
+                    },
+                    undefined,
+                    (error) => {
+                        console.error("❌ Failed to load VRM model", error);
+                        reject(error);
+                    }
+                );
+            });
+        }
 
-        // Load Avatar GLB
-        async function loadAvatar() {
-            // const avatarPaths = ['/static/test5.glb', '/static/avatar.glb'];
-            # const avatarPaths = ['/static/joined1111.glb'];
-            const avatarPaths = ['/static/joined2.glb'];
-            # const avatarPaths = ['/static/fixedaf.glb'];
 
-            for (const path of avatarPaths) {
+        // Load VRM Avatar with enhanced support
+        async function loadVRMAvatar() {
+            # const vrmPaths = ['/static/avatar.vrm', '/static/joined1111.vrm', '/static/test.vrm'];
+            const vrmPaths = ['/static/4thjuly.vrm'];
+
+            for (const path of vrmPaths) {
                 try {
-                    console.log(`Loading: ${path}`);
+                    console.log(`Loading VRM avatar: ${path}`);
 
                     const gltf = await new Promise((resolve, reject) => {
                         gltfLoader.load(path, resolve, undefined, reject);
                     });
 
+                    vrm = gltf.userData.vrm;
+                    if (!vrm) {
+                        console.log(`No VRM data found in ${path}`);
+                        continue;
+                    }
+
                     if (avatar) scene.remove(avatar);
 
-                    avatar = gltf.scene;
+                    avatar = vrm.scene;
                     scene.add(avatar);
 
-                    // Find and log morph targets
-                    avatar.traverse((child) => {
+                    // VRM-specific optimizations
+                    VRMUtils.removeUnnecessaryVertices(vrm.scene);
+                    VRMUtils.removeUnnecessaryJoints(vrm.scene);
+
+                    // Enhanced VRM blend shape detection
+                    vrm.scene.traverse((child) => {
                         if (child.isMesh && child.morphTargetInfluences) {
                             child.userData.morphTargets = child.morphTargetDictionary;
-                            console.log('🎭 Morph targets found:', Object.keys(child.morphTargetDictionary || {}));
+                            child.userData.enhancedMapping = {};
+                            
+                            if (child.morphTargetDictionary) {
+                                const morphNames = Object.keys(child.morphTargetDictionary);
+                                console.log('🎭 VRM morph targets found:', morphNames);
+                                
+                                // Map VRM blend shapes
+                                morphNames.forEach(name => {
+                                    if (ENHANCED_VRM_BLEND_SHAPES[name]) {
+                                        child.userData.enhancedMapping[name] = child.morphTargetDictionary[name];
+                                    }
+                                });
+                                
+                                console.log('🎯 VRM mapping created:', child.userData.enhancedMapping);
+                            }
                         }
                     });
 
-                    console.log(`✅ Avatar loaded: ${path}`);
+                    // Check VRM expression manager
+                    if (vrm.expressionManager) {
+                        console.log('✅ VRM Expression Manager found');
+                        console.log('VRM expressions:', Object.keys(vrm.expressionManager.expressionMap || {}));
+                    }
+
+                    document.getElementById('vrmStatus').innerHTML = '🎭 VRM Model Loaded';
+                    console.log(`✅ VRM avatar loaded: ${path}`);
                     return true;
 
                 } catch (error) {
-                    console.log(`Failed: ${path}`);
+                    console.log(`Failed to load VRM: ${path}`);
                 }
             }
 
-            console.log('❌ No avatar found');
+            console.log('❌ No VRM avatar found. Please place a .vrm file in /static/');
+            document.getElementById('vrmStatus').innerHTML = '❌ No VRM Found';
             return false;
         }
 
-        // Apply blend shapes to avatar
-        function applyBlendShapes(blendShapeValues) {
-            if (!avatar) return;
+        // Apply enhanced VRM blend shapes
+        function applyEnhancedVRMBlendShapes(blendShapeValues) {
+            if (!vrm) return;
 
-            avatar.traverse((child) => {
-                if (child.isMesh && child.morphTargetInfluences && child.morphTargetDictionary) {
-                    // Reset all
-                    for (let i = 0; i < child.morphTargetInfluences.length; i++) {
-                        child.morphTargetInfluences[i] = 0;
-                    }
-
-                    // Apply new values
-                    for (const [shapeName, value] of Object.entries(blendShapeValues)) {
-                        const index = child.morphTargetDictionary[shapeName];
-                        if (index !== undefined) {
-                            child.morphTargetInfluences[index] = value;
-                        }
+            // Use VRM expression manager if available
+            if (vrm.expressionManager) {
+                for (const [shapeName, value] of Object.entries(blendShapeValues)) {
+                    if (vrm.expressionManager.expressionMap[shapeName]) {
+                        vrm.expressionManager.setValue(shapeName, Math.max(0, Math.min(1, value)));
                     }
                 }
-            });
+                vrm.expressionManager.update();
+            } else {
+                // Fallback to direct morph target manipulation
+                avatar.traverse((child) => {
+                    if (child.isMesh && child.morphTargetInfluences && child.morphTargetDictionary) {
+                        // Smooth decay
+                        for (let i = 0; i < child.morphTargetInfluences.length; i++) {
+                            child.morphTargetInfluences[i] *= 0.9;
+                        }
+
+                        // Apply new values
+                        for (const [shapeName, value] of Object.entries(blendShapeValues)) {
+                            const index = child.morphTargetDictionary[shapeName];
+                            if (index !== undefined && value > 0.001) {
+                                const currentValue = child.morphTargetInfluences[index] || 0;
+                                child.morphTargetInfluences[index] = currentValue + (value - currentValue) * 0.3;
+                            }
+                        }
+                    }
+                });
+            }
         }
 
-        // Update viseme debug display
-        function updateVisemeDebug(visemes) {
-            const currentViseme = Object.entries(visemes)
-                .find(([key, value]) => value > 0.5)?.[0] || 'REST';
-            document.getElementById('currentViseme').textContent = currentViseme;
+        // Update enhanced viseme debug display
+        function updateEnhancedVisemeDebug(data) {
+            const blendShapes = data.blend_shapes || {};
+            const emotion = data.emotion || 'neutral';
+            
+            document.getElementById('currentEmotion').textContent = emotion;
+            document.getElementById('activeBlendShapes').textContent = Object.keys(blendShapes).length;
+            
+            // Find dominant blend shape
+            let dominantShape = 'sil';
+            let maxWeight = 0;
+            
+            for (const [shapeName, weight] of Object.entries(blendShapes)) {
+                if (weight > maxWeight) {
+                    maxWeight = weight;
+                    dominantShape = shapeName;
+                }
+            }
+            
+            if (maxWeight > 0.1) {
+                document.getElementById('dominantViseme').textContent = dominantShape;
+            }
         }
 
-        // WebRTC Client for AI Chat
-        class SimpleWebRTCClient {
+        // Enhanced emotion setting for VRM
+        async function setEmotion(emotion) {
+            try {
+                // Update UI
+                document.querySelectorAll('.emotion-btn').forEach(btn => btn.classList.remove('active'));
+                event.target.classList.add('active');
+                
+                // Send to server
+                const response = await fetch('/set_emotion', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ emotion: emotion })
+                });
+                
+                if (response.ok) {
+                    console.log(`✅ VRM emotion set to: ${emotion}`);
+                    document.getElementById('currentEmotion').textContent = emotion;
+                } else {
+                    console.error('Failed to set VRM emotion');
+                }
+            } catch (error) {
+                console.error('Error setting VRM emotion:', error);
+            }
+        }
+
+        // WebRTC Client for AI Chat (same as before)
+        class EnhancedWebRTCClient {
             constructor() {
                 this.peerConnection = null;
                 this.mediaStream = null;
@@ -950,7 +815,6 @@ async def get_unified_interface():
 
                     this.dataChannel = this.peerConnection.createDataChannel('text');
 
-                    // Create and send offer
                     const offer = await this.peerConnection.createOffer();
                     await this.peerConnection.setLocalDescription(offer);
 
@@ -971,7 +835,7 @@ async def get_unified_interface():
                     updateStatus('audioStatus', true);
 
                 } catch (error) {
-                    console.error('WebRTC connection error:', error);
+                    console.error('Enhanced WebRTC connection error:', error);
                     this.disconnect();
                     throw error;
                 }
@@ -994,8 +858,8 @@ async def get_unified_interface():
             }
         }
 
-        // Initialize SSE for AI messages
-        function initSSE() {
+        // Initialize enhanced SSE for AI messages
+        function initEnhancedSSE() {
             const eventSource = new EventSource(`/updates?webrtc_id=${webrtcId}`);
 
             eventSource.onmessage = (event) => {
@@ -1005,8 +869,8 @@ async def get_unified_interface():
                     if (data.type === "stt" || data.type === "llm") {
                         addMessage(data.type === "stt" ? "user" : "ai", data.text);
                     } else if (data.type === "visemes") {
-                        console.log("Received visemes from AI:", data);
-                        // Visemes are automatically sent to avatar via the backend
+                        console.log("Received enhanced VRM visemes from AI:", data);
+                        // Enhanced visemes are automatically processed by the backend
                     }
                 } catch (err) {
                     console.error("SSE parse error", err);
@@ -1048,17 +912,22 @@ async def get_unified_interface():
 
         function animate() {
             requestAnimationFrame(animate);
+            
+            // Update VRM if available
+            if (vrm) {
+                vrm.update(0.016); // ~60fps delta time
+            }
+            
             renderer.render(scene, camera);
         }
 
-        // Voice Button Handling
+        // Enhanced Voice Button Handling
         document.getElementById('voiceBtn').addEventListener('mousedown', async () => {
             if (!isRecording) {
                 try {
                     if (!webrtcClient) {
-                        webrtcClient = new SimpleWebRTCClient();
+                        webrtcClient = new EnhancedWebRTCClient();
                     }
-                    logger.debug({webrtcClient}, "Creating WebRTC client");
                     await webrtcClient.connect();
                     isRecording = true;
                     document.getElementById('voiceBtn').classList.add('recording');
@@ -1084,77 +953,137 @@ async def get_unified_interface():
             e.preventDefault();
         });
 
-        // Initialize the application
-        async function init() {
-            console.log('🚀 Starting Unified Avatar + AI Chat...');
+        // Make setEmotion globally available
+        window.setEmotion = setEmotion;
 
-            // Initialize avatar system
+        // Initialize the enhanced VRM application
+        async function init() {
+            console.log('🚀 Starting Enhanced VRM Avatar + AI Chat with Advanced VRoid Visemes...');
+
+            // Initialize enhanced avatar system
             await initAvatarWebSocket();
             const threeReady = await initThreeJS();
+            await loadVRMModel('/static/4thjuly.vrm');  // Path to your VRM file
 
             if (threeReady) {
-                await loadAvatar();
-                animate();
+                const vrmLoaded = await loadVRMAvatar();
+                if (vrmLoaded) {
+                    animate();
+                    console.log('✅ VRM avatar system ready');
+                } else {
+                    console.warn('⚠️ VRM avatar not loaded, but system continues');
+                    animate(); // Still animate scene even without VRM
+                }
             }
 
-            // Initialize AI chat system
-            initSSE();
+            // Initialize enhanced AI chat system
+            initEnhancedSSE();
 
-            console.log('✅ Application initialized');
+            console.log('✅ Enhanced VRM application initialized');
         }
 
-        // Start the application
+        // Start the enhanced VRM application
         window.addEventListener('load', init);
     </script>
 </body>
 </html>
     '''
 
-@app.websocket("/ws")
-async def fastrtc_websocket_endpoint(websocket: WebSocket):
-    """FastRTC WebSocket endpoint - handles WebRTC signaling"""
-    await websocket.accept()
-    try:
-        while True:
-            data = await websocket.receive_text()
-            # FastRTC handles its own message processing
-            # This endpoint just needs to accept connections
-    except WebSocketDisconnect:
-        pass
-    except Exception as e:
-        logger.error(f"FastRTC WebSocket error: {e}")
-
-# Avatar WebSocket endpoint
+# Enhanced WebSocket endpoint for VRM avatar
 @app.websocket("/ws/avatar")
-async def avatar_websocket_endpoint(websocket: WebSocket):
-    await viseme_controller.connect(websocket)
+async def enhanced_vrm_avatar_websocket_endpoint(websocket: WebSocket):
+    await enhanced_viseme_controller.connect(websocket)
     try:
         while True:
             data = await websocket.receive_text()
             message = json.loads(data)
 
             if message.get("type") == "update_viseme":
-                viseme = message.get("viseme")
-                value = message.get("value", 0.0)
-                await viseme_controller.update_viseme(viseme, value)
+                phoneme = message.get("phoneme", "sil")
+                emotion = message.get("emotion", "neutral")
+                await enhanced_viseme_controller.update_single_viseme(phoneme, emotion)
 
     except WebSocketDisconnect:
-        viseme_controller.disconnect(websocket)
+        enhanced_viseme_controller.disconnect(websocket)
 
-
-# Phoneme playback endpoint (from original avatar app)
+# Enhanced phoneme playback endpoint for VRM
 @app.post("/play_phonemes")
-async def play_phonemes_endpoint(seq: PhonemeSeq):
-    """Play phoneme sequences on the avatar"""
-    # Convert phonemes to viseme format for avatar
-    # This is for direct phoneme control if needed
-    aligned = [(i.phoneme, i.start, i.end) for i in seq.items]
+async def enhanced_vrm_play_phonemes_endpoint(seq: PhonemeSeq):
+    """Play phoneme sequences with enhanced VRM visemes"""
+    phoneme_sequence = [(i.phoneme, i.start, i.end) for i in seq.items]
 
-    # You can implement phoneme-to-viseme conversion here
-    # For now, we'll use the AI-generated visemes
+    try:
+        await enhanced_viseme_controller.play_phoneme_sequence(phoneme_sequence)
+        return {"status": "success", "frames": len(phoneme_sequence), "type": "VRM"}
+    except Exception as e:
+        logger.error(f"Failed to play VRM phonemes: {e}")
+        return {"status": "error", "message": str(e)}
 
-    return {"status": "started", "frames": len(aligned)}
+# Enhanced VRM endpoints
+@app.post("/set_emotion")
+async def set_vrm_emotion_endpoint(request: EmotionRequest):
+    """Set VRM avatar emotion"""
+    try:
+        await enhanced_viseme_controller.set_emotion(request.emotion)
+        return {"status": "success", "emotion": request.emotion, "type": "VRM"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
+@app.post("/trigger_viseme")
+async def trigger_vrm_viseme_endpoint(request: VisemeRequest):
+    """Manually trigger a VRM viseme"""
+    try:
+        await enhanced_viseme_controller.update_single_viseme(request.phoneme, request.emotion)
+        return {"status": "success", "phoneme": request.phoneme, "emotion": request.emotion, "type": "VRM"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@app.post("/reset_avatar")
+async def reset_vrm_avatar_endpoint():
+    """Reset VRM avatar to neutral state"""
+    try:
+        await enhanced_viseme_controller.reset_to_neutral()
+        return {"status": "success", "message": "VRM avatar reset to neutral"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@app.get("/avatar_status")
+async def vrm_avatar_status_endpoint():
+    """Get current VRM avatar status"""
+    status = enhanced_viseme_controller.get_current_state()
+    status["type"] = "VRM"
+    return status
+
+# Enhanced VRM viseme info endpoint
+@app.get("/enhanced_vrm_viseme_info")
+async def get_enhanced_vrm_viseme_info():
+    """Return enhanced VRM viseme mapping information"""
+    return {
+        "enhanced_vrm_mapping": enhanced_viseme_controller.viseme_mapper.vroid_blend_shapes,
+        "phoneme_mapping": enhanced_viseme_controller.viseme_mapper.phoneme_to_viseme,
+        "available_emotions": enhanced_viseme_controller.get_available_emotions(),
+        "transition_types": ["linear", "smooth", "cubic", "anticipate"],
+        "current_state": enhanced_viseme_controller.get_current_state(),
+        "model_type": "VRM",
+        "vroid_blend_shapes": list(enhanced_viseme_controller.viseme_mapper.vroid_blend_shapes.keys())
+    }
+
+
+@app.post("/test_avatar_broadcast")
+async def test_avatar_broadcast():
+    """Test endpoint to manually trigger avatar movement"""
+    try:
+        test_blend_shapes = {
+            "Fcl_MTH_A": 0.8,
+            "Fcl_MTH_Close": 0.2,
+            "Fcl_EYE_Natural": 0.9,
+            "Fcl_ALL_Joy": 0.3
+        }
+
+        await enhanced_viseme_controller._broadcast_blend_shapes(test_blend_shapes)
+        return {"status": "success", "message": "Test broadcast sent"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 # Reset chat endpoint
 @app.get("/reset")
@@ -1163,7 +1092,6 @@ async def reset():
     logger.info("Resetting chat")
     messages = [{"role": "system", "content": sys_prompt}]
     return {"status": "success"}
-
 
 # Stream updates endpoint for AI chat
 @app.get("/updates")
@@ -1174,56 +1102,48 @@ async def stream_updates(webrtc_id: str):
 
     return StreamingResponse(output_stream(), media_type="text/event-stream")
 
-
-# Viseme info endpoint
-@app.get("/viseme-info")
-async def get_viseme_info():
-    """Return viseme mapping information for frontend"""
-    return {
-        "viseme_mapping": viseme_extractor.phoneme_to_viseme,
-        "avatar_visemes": list(viseme_controller.current_visemes.keys()),
-        "viseme_descriptions": {
-            "0": "Silence",
-            "1": "Open vowels (AE, AH, EH, UH)",
-            "2": "Open back vowels (AA, AO, AW, OW)",
-            "3": "Diphthongs (AY, EY, OY)",
-            "4": "R-colored vowels (ER, AX, IX)",
-            "5": "Close front vowels (IH, IY)",
-            "6": "Close back vowels (UW, UH)",
-            "7": "Bilabials (B, P, M)",
-            "8": "Labiodentals (F, V)",
-            "9": "Dental fricatives (TH, DH)",
-            "10": "Alveolars (T, D, N, L)",
-            "11": "Sibilants (S, Z)",
-            "12": "Post-alveolars (SH, ZH, CH, JH)",
-            "13": "Velars (K, G, NG)",
-            "14": "Approximants (R, W, Y, HH)"
-        }
-    }
-
-
-# Health check endpoint
+# Enhanced health check endpoint for VRM
 @app.get("/health")
-async def health_check():
+async def enhanced_vrm_health_check():
     return {
         "status": "healthy",
-        "avatar_connections": len(viseme_controller.active_connections),
+        "enhanced_features": True,
+        "model_type": "VRM",
+        "avatar_connections": len(enhanced_viseme_controller.active_connections),
         "ai_enabled": openai_client is not None,
         "models": {
             "stt": "enabled",
             "tts": "kokoro",
-            "viseme_extractor": type(viseme_extractor).__name__
-        }
+            "viseme_extractor": type(viseme_extractor).__name__,
+            "enhanced_vrm_visemes": True
+        },
+        "avatar_state": enhanced_viseme_controller.get_current_state(),
+        "supported_formats": ["VRM", "GLB (fallback)"],
+        "vroid_blend_shapes": list(enhanced_viseme_controller.viseme_mapper.vroid_blend_shapes.keys())
     }
-
 
 if __name__ == "__main__":
     import uvicorn
 
-    print("🚀 Unified 3D Avatar + AI Chat Server")
+    print("🚀 Enhanced 3D VRM Avatar + AI Chat Server with Advanced VRoid Visemes")
     print("📍 Open: http://localhost:8000")
-    print("📁 Place your GLB as: static/test5.glb or static/avatar.glb")
-    print("🎯 Features: 3D Avatar + Real-time AI Chat + Synchronized Visemes")
+    print("📁 Place your VRM file as: static/avatar.vrm")
+    print("🎯 VRM Features:")
+    print("   ✅ Enhanced VRM facial animation")
+    print("   ✅ Advanced phoneme-to-viseme mapping")
+    print("   ✅ Smooth VRM blend shape transitions")
+    print("   ✅ VRM emotional expression integration")
+    print("   ✅ Real-time lip sync with VRM coarticulation")
+    print("   ✅ VRM Expression Manager support")
     print("🔧 Make sure to set up your .env file with Azure OpenAI credentials")
+    print("📋 Supported VRM blend shapes:")
+
+    # Print some example VRM blend shapes
+    vrm_controller = EnhancedVRoidVisemeController()
+    example_shapes = list(vrm_controller.viseme_mapper.vroid_blend_shapes.keys())[:10]
+    for shape in example_shapes:
+        print(f"   • {shape}")
+    if len(vrm_controller.viseme_mapper.vroid_blend_shapes) > 10:
+        print(f"   ... and {len(vrm_controller.viseme_mapper.vroid_blend_shapes) - 10} more")
 
     uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)
