@@ -1,5 +1,5 @@
 """
-Clean Main Server with OVRLipsync Integration - FIXED ASYNC ISSUES
+Clean Main Server with OVRLipsync Integration - FIXED VISEME PROCESSING
 Streamlined FastAPI server for real-time lip-sync avatar
 """
 
@@ -89,8 +89,7 @@ tts_model = get_tts_model(model="kokoro")
 
 def process_audio_and_respond(audio):
     """
-    Clean audio processing pipeline with OVRLipsync
-    FIXED: Proper async handling for VRM updates
+    FIXED: Audio processing pipeline with proper VRM viseme updates
     """
     # Speech-to-Text
     stt_time = time.time()
@@ -127,26 +126,30 @@ def process_audio_and_respond(audio):
     logger.info(f"LLM took {time.time() - llm_time} seconds")
     yield AdditionalOutputs({"type": "llm", "text": full_response})
 
-    # TTS with VRM Lip-Sync
+    # FIXED: TTS with VRM Lip-Sync Processing
     logger.info("Starting TTS with VRM lip-sync")
     chunk_index = 0
 
     try:
         for sample_rate, audio_chunk in tts_model.stream_tts_sync(full_response):
-            # Process audio for VRM lip-sync using asyncio.run
+            logger.info(f"🎵 Processing TTS chunk {chunk_index}: {len(audio_chunk)} samples at {sample_rate}Hz")
+            
+            # FIXED: Process audio for VRM lip-sync
             def update_vrm_sync():
                 try:
                     # Create new event loop for this thread
                     loop = asyncio.new_event_loop()
                     asyncio.set_event_loop(loop)
                     try:
+                        # Process the audio chunk for visemes
                         loop.run_until_complete(
                             vrm_controller.process_audio_chunk(audio_chunk, sample_rate)
                         )
+                        logger.info(f"✅ VRM updated for chunk {chunk_index}")
                     finally:
                         loop.close()
                 except Exception as e:
-                    logger.error(f"VRM update failed: {e}")
+                    logger.error(f"❌ VRM update failed for chunk {chunk_index}: {e}")
 
             # Start VRM update in background thread
             threading.Thread(target=update_vrm_sync, daemon=True).start()
@@ -155,7 +158,7 @@ def process_audio_and_respond(audio):
             yield sample_rate, audio_chunk
             chunk_index += 1
 
-        logger.info("Finished TTS with VRM lip-sync")
+        logger.info(f"Finished TTS with VRM lip-sync. Processed {chunk_index} chunks.")
 
     except Exception as e:
         logger.error(f"TTS failed: {e}")
@@ -269,30 +272,62 @@ async def health_check():
         }
     }
 
-# Test endpoint for debugging
+# FIXED: Enhanced test endpoint for debugging
 @app.post("/test_avatar")
 async def test_avatar_endpoint():
-    """Test VRM avatar animation"""
+    """Test VRM avatar animation with detailed logging"""
     try:
-        # Create test audio data
         import numpy as np
-        test_audio = np.random.random(8000).astype(np.float32)  # 0.5 seconds at 16kHz
         
-        await vrm_controller.process_audio_chunk(test_audio, 16000)
-        return {"status": "success", "message": "Test animation sent"}
+        # Create test audio data (simulate speech)
+        duration = 1.0  # 1 second
+        sample_rate = 16000
+        test_audio = np.random.random(int(duration * sample_rate)).astype(np.float32) * 0.1
+        
+        # Add some "speech-like" patterns
+        for i in range(0, len(test_audio), 800):  # Every 50ms
+            test_audio[i:i+400] *= 2.0  # Boost some segments
+        
+        logger.info(f"🧪 Testing avatar with {len(test_audio)} samples at {sample_rate}Hz")
+        
+        await vrm_controller.process_audio_chunk(test_audio, sample_rate)
+        
+        # Get current status
+        status = vrm_controller.get_status()
+        
+        return {
+            "status": "success", 
+            "message": "Test animation sent",
+            "audio_length": len(test_audio),
+            "sample_rate": sample_rate,
+            "vrm_status": status
+        }
     except Exception as e:
+        logger.error(f"❌ Test avatar failed: {e}")
         return {"status": "error", "message": str(e)}
+
+# NEW: Debug endpoint to check WebSocket connections
+@app.get("/debug/connections")
+async def debug_connections():
+    """Debug WebSocket connections"""
+    return {
+        "active_connections": len(vrm_controller.active_connections),
+        "animator_running": vrm_controller.smooth_animator.is_animating,
+        "current_emotion": vrm_controller.current_emotion,
+        "current_blend_shapes": vrm_controller.smooth_animator.get_current_state()
+    }
 
 if __name__ == "__main__":
     import uvicorn
 
-    print("🚀 Clean Lip-Sync Avatar Server - FIXED")
+    print("🚀 Clean Lip-Sync Avatar Server - FIXED VISEME PROCESSING")
     print("📍 Open: http://localhost:8000")
     print("📁 Place your VRM file as: static/4thjuly.vrm")
     print("🎯 Features:")
     print("   ✅ OVRLipsync integration")
     print("   ✅ Smooth animation with EMA")
     print("   ✅ Real-time VRM lip-sync")
-    print("   ✅ Fixed async event loop handling")
+    print("   ✅ Fixed viseme processing")
+    print("   ✅ Enhanced debugging")
 
     uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)
