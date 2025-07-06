@@ -1,5 +1,5 @@
 """
-Clean VRM Avatar Controller
+Clean VRM Avatar Controller - FIXED ASYNC ISSUES
 Manages WebSocket connections and blend shape updates
 """
 
@@ -11,12 +11,15 @@ from typing import List, Dict, Optional
 from fastapi import WebSocket
 from ovr_lipsync import OVRLipsyncExtractor
 from smooth_animator import SmoothAnimator, AnimationFrame
+import threading
+from concurrent.futures import ThreadPoolExecutor
 
 logger = logging.getLogger(__name__)
 
 class VRMAvatarController:
     """
     Clean VRM Avatar Controller with OVRLipsync integration
+    FIXED: Proper async/await handling for WebSocket broadcasting
     """
     
     def __init__(self):
@@ -31,6 +34,10 @@ class VRMAvatarController:
         self.current_emotion = "neutral"
         self.is_speaking = False
         
+        # Async handling
+        self.loop = None
+        self.executor = ThreadPoolExecutor(max_workers=2)
+        
         # Setup animator callback
         self.smooth_animator.set_frame_callback(self._on_animation_frame)
         self.smooth_animator.start_animation()
@@ -42,6 +49,10 @@ class VRMAvatarController:
         await websocket.accept()
         self.active_connections.append(websocket)
         logger.info(f"Client connected. Total: {len(self.active_connections)}")
+        
+        # Store the event loop for later use
+        if self.loop is None:
+            self.loop = asyncio.get_event_loop()
         
         # Send initial neutral state
         await self._broadcast_to_clients({
@@ -86,6 +97,7 @@ class VRMAvatarController:
     def _on_animation_frame(self, frame: AnimationFrame):
         """
         Callback for animation frames from smooth animator
+        FIXED: Proper async handling without creating new event loops
         """
         try:
             # Create message for clients
@@ -97,9 +109,15 @@ class VRMAvatarController:
                 "timestamp": frame.timestamp
             }
             
-            # Send to all clients (non-blocking)
-            asyncio.create_task(self._broadcast_to_clients(message))
-            
+            # Schedule the broadcast in the main event loop
+            if self.loop and not self.loop.is_closed():
+                # Use call_soon_threadsafe to schedule the coroutine
+                future = asyncio.run_coroutine_threadsafe(
+                    self._broadcast_to_clients(message), 
+                    self.loop
+                )
+                # Don't wait for the result to avoid blocking
+                
         except Exception as e:
             logger.error(f"Animation frame callback error: {e}")
     
@@ -164,4 +182,5 @@ class VRMAvatarController:
     def cleanup(self):
         """Cleanup resources"""
         self.smooth_animator.stop_animation()
+        self.executor.shutdown(wait=False)
         logger.info("VRM Controller cleaned up")

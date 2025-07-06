@@ -1,5 +1,5 @@
 """
-Clean Main Server with OVRLipsync Integration
+Clean Main Server with OVRLipsync Integration - FIXED ASYNC ISSUES
 Streamlined FastAPI server for real-time lip-sync avatar
 """
 
@@ -16,6 +16,7 @@ import platform
 import socket
 import json
 import threading
+import asyncio
 
 # FastRTC and AI imports
 from fastrtc import ReplyOnPause, Stream, AlgoOptions, SileroVadOptions, AdditionalOutputs
@@ -89,6 +90,7 @@ tts_model = get_tts_model(model="kokoro")
 def process_audio_and_respond(audio):
     """
     Clean audio processing pipeline with OVRLipsync
+    FIXED: Proper async handling for VRM updates
     """
     # Speech-to-Text
     stt_time = time.time()
@@ -131,20 +133,23 @@ def process_audio_and_respond(audio):
 
     try:
         for sample_rate, audio_chunk in tts_model.stream_tts_sync(full_response):
-            # Process audio for VRM lip-sync
-            def update_vrm_async():
+            # Process audio for VRM lip-sync using asyncio.run
+            def update_vrm_sync():
                 try:
+                    # Create new event loop for this thread
                     loop = asyncio.new_event_loop()
                     asyncio.set_event_loop(loop)
-                    loop.run_until_complete(
-                        vrm_controller.process_audio_chunk(audio_chunk, sample_rate)
-                    )
-                    loop.close()
+                    try:
+                        loop.run_until_complete(
+                            vrm_controller.process_audio_chunk(audio_chunk, sample_rate)
+                        )
+                    finally:
+                        loop.close()
                 except Exception as e:
                     logger.error(f"VRM update failed: {e}")
 
-            # Start VRM update in background
-            threading.Thread(target=update_vrm_async, daemon=True).start()
+            # Start VRM update in background thread
+            threading.Thread(target=update_vrm_sync, daemon=True).start()
 
             # Yield audio for playback
             yield sample_rate, audio_chunk
@@ -264,16 +269,30 @@ async def health_check():
         }
     }
 
+# Test endpoint for debugging
+@app.post("/test_avatar")
+async def test_avatar_endpoint():
+    """Test VRM avatar animation"""
+    try:
+        # Create test audio data
+        import numpy as np
+        test_audio = np.random.random(8000).astype(np.float32)  # 0.5 seconds at 16kHz
+        
+        await vrm_controller.process_audio_chunk(test_audio, 16000)
+        return {"status": "success", "message": "Test animation sent"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
 if __name__ == "__main__":
     import uvicorn
 
-    print("🚀 Clean Lip-Sync Avatar Server")
+    print("🚀 Clean Lip-Sync Avatar Server - FIXED")
     print("📍 Open: http://localhost:8000")
     print("📁 Place your VRM file as: static/4thjuly.vrm")
     print("🎯 Features:")
     print("   ✅ OVRLipsync integration")
     print("   ✅ Smooth animation with EMA")
     print("   ✅ Real-time VRM lip-sync")
-    print("   ✅ Clean architecture")
+    print("   ✅ Fixed async event loop handling")
 
     uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)
