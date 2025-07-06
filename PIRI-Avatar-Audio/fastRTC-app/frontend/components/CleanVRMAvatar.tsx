@@ -201,8 +201,11 @@ export function CleanVRMAvatar() {
             ws.onmessage = (event) => {
                 try {
                     const data: VRMWebSocketData = JSON.parse(event.data);
+                    console.log('📨 Received WebSocket message:', data.type);
+                    
                     if (data.type === 'vrm_update') {
                         if (data.blend_shapes) {
+                            console.log('🎭 Received blend shapes:', data.blend_shapes);
                             applyVRMBlendShapes(data.blend_shapes);
                             setBlendShapeCount(Object.keys(data.blend_shapes).length);
                         }
@@ -320,6 +323,22 @@ export function CleanVRMAvatar() {
                         VRMUtils.removeUnnecessaryVertices(vrm.scene);
                         VRMUtils.removeUnnecessaryJoints(vrm.scene);
                     }
+                    
+                    // Debug VRM structure
+                    console.log('🎭 VRM loaded, checking structure...');
+                    console.log('VRM object:', vrm);
+                    console.log('Has expressionManager:', !!vrm.expressionManager);
+                    
+                    if (vrm.expressionManager) {
+                        console.log('Available VRM expressions:', Object.keys(vrm.expressionManager.expressionMap || {}));
+                    }
+                    
+                    // Check for morph targets as fallback
+                    vrm.scene.traverse((child: any) => {
+                        if (child.isMesh && child.morphTargetDictionary) {
+                            console.log(`Mesh "${child.name}" morph targets:`, Object.keys(child.morphTargetDictionary));
+                        }
+                    });
 
                     // Camera positioning
                     const box = new THREE.Box3().setFromObject(vrm.scene);
@@ -377,22 +396,44 @@ export function CleanVRMAvatar() {
     const applyVRMBlendShapes = useCallback((blendShapes: Record<string, number>) => {
         if (!vrmRef.current) return;
 
+        console.log('🎭 Applying blend shapes:', blendShapes);
+        
+        // Check for significant blend shapes
+        const significantShapes = Object.entries(blendShapes).filter(([_, value]) => value > 0.01);
+        if (significantShapes.length > 0) {
+            console.log('📊 Significant shapes:', significantShapes);
+        }
+
         if (vrmRef.current.expressionManager) {
+            console.log('✅ Using VRM Expression Manager');
+            console.log('Available expressions:', Object.keys(vrmRef.current.expressionManager.expressionMap || {}));
+            
             for (const [shapeName, value] of Object.entries(blendShapes)) {
                 if (vrmRef.current.expressionManager.expressionMap[shapeName]) {
                     vrmRef.current.expressionManager.setValue(shapeName, Math.max(0, Math.min(1, value)));
+                    console.log(`✅ Set VRM expression: ${shapeName} = ${value}`);
+                } else {
+                    console.log(`❌ VRM expression not found: ${shapeName}`);
                 }
             }
             vrmRef.current.expressionManager.update();
+            console.log('✅ VRM Expression Manager updated');
         } else {
+            console.log('⚠️ Using fallback morph targets');
             // Fallback to morph targets
             const targetObject = vrmRef.current.scene || vrmRef.current;
             targetObject.traverse((child: any) => {
                 if (child.isMesh && child.morphTargetInfluences && child.morphTargetDictionary) {
+                    console.log(`🎯 Applying to mesh: ${child.name}`);
+                    console.log(`Available morph targets:`, Object.keys(child.morphTargetDictionary));
+                    
                     for (const [shapeName, value] of Object.entries(blendShapes)) {
                         const index = child.morphTargetDictionary[shapeName];
                         if (index !== undefined) {
                             child.morphTargetInfluences[index] = Math.max(0, Math.min(1, value));
+                            console.log(`✅ Set morph target: ${shapeName}[${index}] = ${value}`);
+                        } else {
+                            console.log(`❌ Morph target not found: ${shapeName}`);
                         }
                     }
                 }

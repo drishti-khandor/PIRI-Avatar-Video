@@ -153,8 +153,11 @@ class VRMAvatarController:
             significant_shapes = {k: v for k, v in message["blend_shapes"].items() if v > 0.01}
             if significant_shapes:
                 logger.info(f"📡 Broadcasting to {len(self.active_connections)} clients: {list(significant_shapes.keys())}")
+                logger.info(f"📊 Blend shape values: {significant_shapes}")
         
         message_json = json.dumps(message)
+        logger.debug(f"📤 Sending message: {message_json[:200]}...")
+        
         disconnected = []
         sent_count = 0
         
@@ -162,6 +165,7 @@ class VRMAvatarController:
             try:
                 await connection.send_text(message_json)
                 sent_count += 1
+                logger.debug(f"✅ Sent to client {sent_count}")
             except Exception as e:
                 logger.error(f"❌ Failed to send to client: {e}")
                 disconnected.append(connection)
