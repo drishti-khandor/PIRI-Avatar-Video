@@ -150,22 +150,37 @@ class EnhancedVRoidVisemeController:
             # Return to neutral/rest position
             neutral_weights = self.viseme_mapper.get_instantaneous_viseme_weights('sil', emotion)
             await self._broadcast_blend_shapes(neutral_weights)
+            # ADD LOGGING HERE:
+            logger.info("🔄 No AI visemes - returning to neutral/rest position")
             return
 
         logger.info(f"🎭 Processing {len(ai_visemes)} AI visemes with emotion: {emotion}")
 
+        # ADD LOGGING HERE - Log raw AI visemes:
+        logger.info(f"📥 RAW_AI_VISEMES: {ai_visemes}")
+
         # Convert AI visemes to phoneme sequence
         phoneme_sequence = []
-        for viseme_data in ai_visemes:
+        for i, viseme_data in enumerate(ai_visemes):
             # Extract data from AI viseme
             ai_viseme_id = str(viseme_data.get('viseme', '0'))
             start_time = float(viseme_data.get('start_time', 0.0))
             end_time = float(viseme_data.get('end_time', 0.1))
             confidence = float(viseme_data.get('confidence', 1.0))
 
+            # ADD LOGGING HERE - Log each AI viseme:
+            logger.info(
+                f"🔢 AI_VISEME[{i}]: id={ai_viseme_id}, time={start_time:.3f}-{end_time:.3f}, confidence={confidence}")
+
             # Map AI viseme to phoneme using improved mapping
             phoneme = self._ai_viseme_to_phoneme(ai_viseme_id)
             phoneme_sequence.append((phoneme, start_time, end_time))
+
+            # ADD LOGGING HERE - Log the mapping result:
+            logger.info(f"🔄 MAPPING[{i}]: viseme_{ai_viseme_id} -> phoneme_{phoneme}")
+
+        # ADD LOGGING HERE - Log complete phoneme sequence:
+        logger.info(f"📝 COMPLETE_PHONEME_SEQUENCE: {phoneme_sequence}")
 
         # Generate smooth animation sequence
         try:
@@ -175,14 +190,28 @@ class EnhancedVRoidVisemeController:
                 transition_type=VisemeTransitionType.SMOOTH
             )
 
+            # ADD LOGGING HERE - Log animation frames count:
+            logger.info(f"🎬 Generated {len(animation_frames)} animation frames for {len(phoneme_sequence)} phonemes")
+
+            # ADD LOGGING HERE - Log first few frames for debugging:
+            for i, frame in enumerate(animation_frames[:3]):
+                significant_shapes = {k: v for k, v in frame.blend_shapes.items() if v > 0.1}
+                logger.info(f"🎭 FRAME[{i}]: time={frame.timestamp:.3f}, shapes={significant_shapes}")
+
             # Start animation playback
             await self._play_animation_sequence(animation_frames)
 
+            # ADD LOGGING HERE - Confirm playback started:
+            logger.info(f"✅ Animation playback completed for {len(animation_frames)} frames")
+
         except Exception as e:
             logger.error(f"Failed to process viseme sequence: {e}")
+            # ADD LOGGING HERE - Log fallback:
+            logger.warning("⚠️ Falling back to neutral viseme due to processing error")
             # Fallback to simple viseme
             fallback_weights = self.viseme_mapper.get_instantaneous_viseme_weights('sil', emotion)
             await self._broadcast_blend_shapes(fallback_weights)
+            logger.info(f"🔄 FALLBACK_WEIGHTS: {fallback_weights}")
 
     def _ai_viseme_to_phoneme(self, ai_viseme_id: str) -> str:
         """
@@ -208,6 +237,7 @@ class EnhancedVRoidVisemeController:
         }
 
         phoneme = viseme_to_phoneme_map.get(ai_viseme_id, 'sil')
+        logger.info(f"🔄 AI_VISEME_MAPPING: {ai_viseme_id} -> {phoneme}")
         logger.debug(f"Mapped AI viseme '{ai_viseme_id}' to phoneme '{phoneme}'")
         return phoneme
 
@@ -388,6 +418,8 @@ class EnhancedVRoidVisemeController:
         """Update to a single viseme immediately (for manual control)"""
         weights = self.viseme_mapper.get_instantaneous_viseme_weights(phoneme, emotion)
         await self._broadcast_blend_shapes(weights)
+        # ADD LOGGING HERE:
+        logger.info(f"🎯 VISEME: {phoneme} -> emotion: {emotion} -> weights: {list(weights.keys())}")
         logger.debug(f"🎯 Updated to single viseme: {phoneme} with emotion: {emotion}")
 
     async def set_emotion(self, emotion: str):
@@ -509,6 +541,9 @@ def enhanced_process_audio_and_respond(audio, enhanced_viseme_controller: Enhanc
                         "confidence": float(viseme.confidence)
                     }
                     enhanced_visemes.append(enhanced_viseme)
+                    # ADD LOGGING HERE:
+                    logger.info(
+                        f"🎵 TTS_VISEME: chunk={chunk_index}, viseme={enhanced_viseme['viseme']}, time={enhanced_viseme['start_time']:.3f}-{enhanced_viseme['end_time']:.3f}")
                     all_visemes.append(enhanced_viseme)
 
                 # Send viseme data to frontend

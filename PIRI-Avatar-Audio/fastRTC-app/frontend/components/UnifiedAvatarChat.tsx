@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
+
 // Types for VRM-enhanced system
 interface EnhancedVisemeData {
     viseme: string;
@@ -598,6 +599,8 @@ export function EnhancedVRMAvatarChat() {
             console.log('Available VRM expressions:', Object.keys(vrmRef.current.expressionManager.expressionMap || {}));
 
             for (const [shapeName, value] of Object.entries(blendShapes)) {
+
+
                 // Try direct mapping first
                 if (vrmRef.current.expressionManager.expressionMap[shapeName]) {
                     vrmRef.current.expressionManager.setValue(shapeName, Math.max(0, Math.min(1, value)));

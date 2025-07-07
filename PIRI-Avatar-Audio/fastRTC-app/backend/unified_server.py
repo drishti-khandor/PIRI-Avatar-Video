@@ -1102,6 +1102,17 @@ async def stream_updates(webrtc_id: str):
 
     return StreamingResponse(output_stream(), media_type="text/event-stream")
 
+# Add this simple logging endpoint
+@app.get("/debug_visemes")
+async def debug_visemes():
+    """Simple endpoint to see current viseme state"""
+    return {
+        "current_state": enhanced_viseme_controller.get_current_state(),
+        "available_emotions": enhanced_viseme_controller.get_available_emotions(),
+        "current_blend_shapes": enhanced_viseme_controller.current_blend_shapes,
+        "timestamp": time.time()
+    }
+
 # Enhanced health check endpoint for VRM
 @app.get("/health")
 async def enhanced_vrm_health_check():
@@ -1121,6 +1132,150 @@ async def enhanced_vrm_health_check():
         "supported_formats": ["VRM", "GLB (fallback)"],
         "vroid_blend_shapes": list(enhanced_viseme_controller.viseme_mapper.vroid_blend_shapes.keys())
     }
+
+
+# Add these debug endpoints to unified_server.py
+
+@app.get("/debug_mapping/{viseme_id}")
+async def debug_viseme_mapping_endpoint(viseme_id: str):
+    """Debug endpoint to trace viseme mapping pipeline"""
+    try:
+        # Step 1: AI viseme to phoneme
+        phoneme = enhanced_viseme_controller._ai_viseme_to_phoneme(viseme_id)
+
+        # Step 2: Phoneme to viseme type (via advanced system)
+        viseme_type = enhanced_viseme_controller.viseme_mapper.phoneme_to_viseme.get(phoneme.upper(), 'UNKNOWN')
+
+        # Step 3: Viseme type to blend shapes
+        raw_blend_shapes = enhanced_viseme_controller.viseme_mapper.vroid_blend_shapes.get(viseme_type, {})
+
+        # Step 4: Final weights through the system
+        final_weights = enhanced_viseme_controller.viseme_mapper.get_instantaneous_viseme_weights(phoneme, 'neutral')
+
+        # Step 5: Check what would be sent to frontend
+        return {
+            "status": "success",
+            "mapping_trace": {
+                "step_1_ai_viseme_id": viseme_id,
+                "step_2_phoneme": phoneme,
+                "step_3_viseme_type": viseme_type,
+                "step_4_raw_blend_shapes": raw_blend_shapes,
+                "step_5_final_weights": final_weights,
+                "step_6_significant_weights": {k: v for k, v in final_weights.items() if v > 0.01},
+                "debug_info": {
+                    "phoneme_exists_in_mapping": phoneme.upper() in enhanced_viseme_controller.viseme_mapper.phoneme_to_viseme,
+                    "viseme_type_exists": viseme_type in enhanced_viseme_controller.viseme_mapper.vroid_blend_shapes,
+                    "total_blend_shapes": len(final_weights),
+                    "active_blend_shapes": len([v for v in final_weights.values() if v > 0.01])
+                }
+            }
+        }
+    except Exception as e:
+        import traceback
+        return {
+            "status": "error",
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }
+
+
+@app.get("/debug_websocket_status")
+async def debug_websocket_status():
+    """Check WebSocket connection status"""
+    return {
+        "status": "success",
+        "websocket_info": {
+            "active_connections": len(enhanced_viseme_controller.active_connections),
+            "controller_state": enhanced_viseme_controller.get_current_state(),
+            "current_blend_shapes": enhanced_viseme_controller.current_blend_shapes,
+            "current_emotion": enhanced_viseme_controller.current_emotion
+        }
+    }
+
+
+@app.post("/debug_send_test_shapes")
+async def debug_send_test_shapes():
+    """Send test blend shapes to see if WebSocket works"""
+    try:
+        test_shapes = {
+            "Fcl_MTH_A": 0.9,
+            "Fcl_MTH_Large": 0.4,
+            "Fcl_ALL_Joy": 0.3,
+            "Fcl_EYE_Joy": 0.5,
+            "debug_test": True
+        }
+
+        # Send directly via WebSocket
+        await enhanced_viseme_controller._broadcast_blend_shapes(test_shapes)
+
+        return {
+            "status": "success",
+            "message": "Test shapes sent",
+            "shapes_sent": test_shapes,
+            "connections_count": len(enhanced_viseme_controller.active_connections)
+        }
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
+@app.get("/debug_all_mappings")
+async def debug_all_mappings():
+    """Show all available mappings for debugging"""
+    return {
+        "status": "success",
+        "mappings": {
+            "ai_viseme_to_phoneme": {
+                "0": enhanced_viseme_controller._ai_viseme_to_phoneme("0"),
+                "1": enhanced_viseme_controller._ai_viseme_to_phoneme("1"),
+                "2": enhanced_viseme_controller._ai_viseme_to_phoneme("2"),
+                "3": enhanced_viseme_controller._ai_viseme_to_phoneme("3"),
+                "10": enhanced_viseme_controller._ai_viseme_to_phoneme("10"),
+                "11": enhanced_viseme_controller._ai_viseme_to_phoneme("11"),
+            },
+            "phoneme_to_viseme_type": enhanced_viseme_controller.viseme_mapper.phoneme_to_viseme,
+            "available_viseme_types": list(enhanced_viseme_controller.viseme_mapper.vroid_blend_shapes.keys()),
+            "sample_blend_shapes": {
+                viseme_type: list(shapes.keys())
+                for viseme_type, shapes in enhanced_viseme_controller.viseme_mapper.vroid_blend_shapes.items()
+            }
+        }
+    }
+
+
+# Also add this enhanced trigger_viseme that shows what's being sent
+@app.post("/debug_trigger_viseme")
+async def debug_trigger_viseme_endpoint(request: VisemeRequest):
+    """Enhanced trigger viseme with full debug info"""
+    try:
+        # Get what would be sent
+        weights = enhanced_viseme_controller.viseme_mapper.get_instantaneous_viseme_weights(
+            request.phoneme, request.emotion
+        )
+
+        # Send it
+        await enhanced_viseme_controller.update_single_viseme(request.phoneme, request.emotion)
+
+        return {
+            "status": "success",
+            "phoneme": request.phoneme,
+            "emotion": request.emotion,
+            "type": "VRM",
+            "weights_sent": weights,
+            "significant_weights": {k: v for k, v in weights.items() if v > 0.01},
+            "connections": len(enhanced_viseme_controller.active_connections),
+            "debug_info": {
+                "total_shapes": len(weights),
+                "active_shapes": len([v for v in weights.values() if v > 0.01]),
+                "max_weight": max(weights.values()) if weights else 0
+            }
+        }
+    except Exception as e:
+        import traceback
+        return {
+            "status": "error",
+            "message": str(e),
+            "traceback": traceback.format_exc()
+        }
 
 if __name__ == "__main__":
     import uvicorn

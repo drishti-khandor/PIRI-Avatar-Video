@@ -4,6 +4,9 @@ from typing import List, Tuple, Dict
 import asyncio
 from dataclasses import dataclass
 from fastrtc import AdditionalOutputs
+import logging
+logger = logging.getLogger(__name__)
+
 
 
 @dataclass
@@ -215,6 +218,8 @@ class VisemeExtractor:
                     confidence=0.8
                 ))
 
+            logger.info(f"🎤 EXTRACTED_VISEMES: {[(v.viseme, v.start_time, v.end_time) for v in visemes]}")
+
             return visemes
 
         except Exception as e:
@@ -226,10 +231,14 @@ class VisemeExtractor:
         """Analyze a segment and return appropriate viseme with better variety"""
         try:
             if len(segment) == 0:
+                # ADD LOGGING HERE:
+                print(f"🔇 AUDIO_ANALYSIS: Empty segment -> viseme='0' (silence)")
                 return '0'
 
             energy = np.sum(segment ** 2)
             if energy < 1e-6:
+                # ADD LOGGING HERE:
+                print(f"🔇 AUDIO_ANALYSIS: Low energy ({energy:.2e}) -> viseme='0' (silence)")
                 return '0'  # Silence
 
             # Calculate features
@@ -239,32 +248,67 @@ class VisemeExtractor:
             avg_centroid = np.mean(spectral_centroid) if len(spectral_centroid) > 0 else 0
             avg_zcr = np.mean(zcr) if len(zcr) > 0 else 0
 
+            # ADD LOGGING HERE - Log the audio features:
+            print(f"🔊 AUDIO_FEATURES: energy={energy:.4f}, centroid={avg_centroid:.0f}Hz, zcr={avg_zcr:.3f}")
+
             # Use random selection within reasonable ranges to get variety
             import random
 
             # High frequency sounds
             if avg_centroid > 3500:
-                return random.choice(['11', '12'])  # Sibilants or post-alveolars
+                result = random.choice(['11', '12'])  # Sibilants or post-alveolars
+                # ADD LOGGING HERE:
+                print(f"📈 HIGH_FREQ: centroid={avg_centroid:.0f} -> viseme='{result}' (sibilants/post-alveolars)")
+                return result
             elif avg_centroid > 2500:
-                return random.choice(['8', '9', '10'])  # Fricatives or alveolars
+                result = random.choice(['8', '9', '10'])  # Fricatives or alveolars
+                # ADD LOGGING HERE:
+                print(f"📊 MID_HIGH_FREQ: centroid={avg_centroid:.0f} -> viseme='{result}' (fricatives/alveolars)")
+                return result
             elif avg_centroid > 1500:
                 if avg_zcr > 0.1:
-                    return random.choice(['10', '13'])  # Consonants
+                    result = random.choice(['10', '13'])  # Consonants
+                    # ADD LOGGING HERE:
+                    print(
+                        f"🔄 MID_FREQ_HIGH_ZCR: centroid={avg_centroid:.0f}, zcr={avg_zcr:.3f} -> viseme='{result}' (consonants)")
+                    return result
                 else:
-                    return random.choice(['1', '3', '5'])  # Vowels
+                    result = random.choice(['1', '3', '5'])  # Vowels
+                    # ADD LOGGING HERE:
+                    print(
+                        f"🎵 MID_FREQ_LOW_ZCR: centroid={avg_centroid:.0f}, zcr={avg_zcr:.3f} -> viseme='{result}' (vowels)")
+                    return result
             elif avg_centroid > 800:
                 if energy > 0.01:
-                    return random.choice(['1', '2', '4'])  # Mid/back vowels
+                    result = random.choice(['1', '2', '4'])  # Mid/back vowels
+                    # ADD LOGGING HERE:
+                    print(
+                        f"🔉 LOW_MID_FREQ_HIGH_ENERGY: centroid={avg_centroid:.0f}, energy={energy:.4f} -> viseme='{result}' (mid/back vowels)")
+                    return result
                 else:
-                    return random.choice(['7', '14'])  # Bilabials or approximants
+                    result = random.choice(['7', '14'])  # Bilabials or approximants
+                    # ADD LOGGING HERE:
+                    print(
+                        f"🤐 LOW_MID_FREQ_LOW_ENERGY: centroid={avg_centroid:.0f}, energy={energy:.4f} -> viseme='{result}' (bilabials/approximants)")
+                    return result
             else:
                 if avg_zcr < 0.05:
-                    return random.choice(['2', '6'])  # Back vowels
+                    result = random.choice(['2', '6'])  # Back vowels
+                    # ADD LOGGING HERE:
+                    print(
+                        f"📉 LOW_FREQ_LOW_ZCR: centroid={avg_centroid:.0f}, zcr={avg_zcr:.3f} -> viseme='{result}' (back vowels)")
+                    return result
                 else:
-                    return random.choice(['7', '13'])  # Bilabials or velars
+                    result = random.choice(['7', '13'])  # Bilabials or velars
+                    # ADD LOGGING HERE:
+                    print(
+                        f"📉 LOW_FREQ_HIGH_ZCR: centroid={avg_centroid:.0f}, zcr={avg_zcr:.3f} -> viseme='{result}' (bilabials/velars)")
+                    return result
 
         except Exception as e:
-            print(f"Segment analysis error: {e}")
+            print(f"❌ Segment analysis error: {e}")
+            # ADD LOGGING HERE:
+            print(f"🔄 FALLBACK: Error occurred -> viseme='1' (default neutral vowel)")
             return '1'  # Default to neutral vowel
 
     async def extract_visemes_async(
