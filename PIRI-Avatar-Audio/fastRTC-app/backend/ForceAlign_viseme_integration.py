@@ -143,7 +143,7 @@ class ForceAlignVisemeExtractor:
                     raw_phoneme = ''.join(filter(str.isalpha, raw_phoneme))
                     phoneme = raw_phoneme.lower() if raw_phoneme else 'sil'
                     start_time = phoneme_alignment.time_start
-                    end_time = phoneme_alignment.time_end
+                    end_time = phoneme_alignment.time_end+0.1
                     
                     # Convert phoneme to viseme ID and then to string
                     viseme_id = self.phoneme_to_viseme_id.get(phoneme, 0)

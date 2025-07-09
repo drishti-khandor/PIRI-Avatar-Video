@@ -56,75 +56,75 @@ class VRoidVisemeMapper:
             
             # ID 1: p/b/m - FcL_MTH_Close (lip press) - 0.80
             'pp': {
-                'FcL_MTH_Close': 0.80
+                'Fcl_MTH_Close': 0.80
             },
             
             # ID 2: f/v - FcL_MTH_Small + FcL_MTH_Up - 0.65
             'ff': {
-                'FcL_MTH_Small': 0.65,
-                'FcL_MTH_Up': 0.65
+                'Fcl_MTH_Small': 0.65,
+                'Fcl_MTH_Up': 0.65
             },
             
             # ID 3: th - FcL_MTH_Small + FcL_MTH_Down - 0.65
             'th': {
-                'FcL_MTH_Small': 0.65,
-                'FcL_MTH_Down': 0.65
+                'Fcl_MTH_Small': 0.65,
+                'Fcl_MTH_Down': 0.65
             },
             
             # ID 4: t/d/l - FcL_MTH_Small (optional tongue) - 0.50
             'dd': {
-                'FcL_MTH_Small': 0.50
+                'Fcl_MTH_Small': 0.50
             },
             
             # ID 5: k/g/ng - FcL_MTH_Small (jaw drop a bit) - 0.55
             'kk': {
-                'FcL_MTH_Small': 0.55
+                'Fcl_MTH_Small': 0.55
             },
             
             # ID 6: ch/sh/jh - FcL_MTH_Close + Small (blend 50/50) - 0.70
             'ch': {
-                'FcL_MTH_Close': 0.35,  # 50% of 0.70
-                'FcL_MTH_Small': 0.35   # 50% of 0.70
+                'Fcl_MTH_Close': 0.35,  # 50% of 0.70
+                'Fcl_MTH_Small': 0.35   # 50% of 0.70
             },
             
             # ID 7: s/z - FcL_MTH_Small - 0.60
             'ss': {
-                'FcL_MTH_Small': 0.60
+                'Fcl_MTH_Small': 0.60
             },
             
             # ID 8: n - FcL_MTH_Close (so lips touch) - 0.80
             'nn': {
-                'FcL_MTH_Close': 0.80
+                'Fcl_MTH_Close': 0.80
             },
             
             # ID 9: r - FcL_MTH_Neutral or leave at last vowel - n/a
             'rr': {
-                'FcL_MTH_Neutral': 0.50
+                'Fcl_MTH_Neutral': 0.50
             },
             
             # ID 10: "a" (ah) - FcL_MTH_A - 1.00
             'aa': {
-                'FcL_MTH_A': 1.00
+                'Fcl_MTH_A': 1.00
             },
             
             # ID 11: "eh" - FcL_MTH_E - 1.00
             'eh': {
-                'FcL_MTH_E': 1.00
+                'Fcl_MTH_E': 1.00
             },
             
             # ID 12: "ee" - FcL_MTH_I - 1.00
             'ih': {
-                'FcL_MTH_I': 1.00
+                'Fcl_MTH_I': 1.00
             },
             
             # ID 13: "oh" - FcL_MTH_O - 1.00
             'oh': {
-                'FcL_MTH_O': 1.00
+                'Fcl_MTH_O': 1.00
             },
             
             # ID 14: "oo" - FcL_MTH_U - 1.00
             'oo': {
-                'FcL_MTH_U': 1.00
+                'Fcl_MTH_U': 1.00
             }
         }
     

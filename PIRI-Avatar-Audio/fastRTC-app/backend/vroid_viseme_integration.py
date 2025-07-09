@@ -16,6 +16,9 @@ from ForceAlign_viseme_integration import ForceAlignVisemeExtractor
 from dotenv import load_dotenv
 from fastapi import WebSocket
 import numpy as np
+import base64
+import io
+import wave
 from fastrtc import AdditionalOutputs, get_stt_model, get_tts_model
 from openai import AzureOpenAI
 
@@ -83,6 +86,7 @@ class EnhancedVRoidVisemeController:
         self.animation_queue = []
         self.is_animating = False
         self.animation_lock = asyncio.Lock()
+        self.is_processing_batch = False  # Add this flag
 
         logger.info("✅ Enhanced VRoid Viseme Controller initialized")
 
@@ -132,23 +136,72 @@ class EnhancedVRoidVisemeController:
         for connection in disconnected:
             self.disconnect(connection)
 
+    # async def update_from_ai_visemes(self, ai_visemes: List[Dict]):
+    #     """
+    #     Process ForceAlign-generated visemes and convert to VRoid blend shapes
+    #     """
+    #     if not ai_visemes:
+    #         # Return to neutral/rest position
+    #         neutral_weights = self.viseme_mapper.get_instantaneous_viseme_weights('sil')
+    #         await self._broadcast_blend_shapes(neutral_weights)
+    #         logger.info("🔄 No AI visemes - returning to neutral/rest position")
+    #         return
+    #
+    #     logger.info(f"🎭 Processing {len(ai_visemes)} ForceAlign visemes")
+    #
+    #     # Process each viseme with proper timing
+    #     for i, viseme_data in enumerate(ai_visemes):
+    #         try:
+    #             # Extract data from ForceAlign viseme
+    #             viseme_string = str(viseme_data.get('viseme', 'sil'))
+    #             start_time = float(viseme_data.get('start_time', 0.0))
+    #             end_time = float(viseme_data.get('end_time', 0.1))
+    #             confidence = float(viseme_data.get('confidence', 1.0))
+    #
+    #             logger.info(
+    #                 f"🔢 VISEME[{i}]: {viseme_string}, time={start_time:.3f}-{end_time:.3f}, confidence={confidence}")
+    #
+    #             # Get blend shape weights for this viseme
+    #             blend_shapes = self.viseme_mapper.get_instantaneous_viseme_weights(viseme_string)
+    #
+    #             # Log the blend shapes being applied
+    #             active_shapes = {k: v for k, v in blend_shapes.items() if v > 0.01}
+    #             logger.info(f"🎯 BLEND_SHAPES[{i}]: {active_shapes}")
+    #
+    #             # Apply the blend shapes
+    #             await self._broadcast_blend_shapes(blend_shapes)
+    #
+    #             # Calculate hold duration based on viseme duration
+    #             duration = end_time - start_time
+    #             hold_time = max(0.1, min(duration, 0.5))  # Between 100ms and 500ms
+    #
+    #             # Hold the viseme for the calculated duration
+    #             await asyncio.sleep(hold_time)
+    #
+    #         except Exception as e:
+    #             logger.error(f"Failed to process viseme {i}: {e}")
+    #             continue
+    #
+    #     # Return to neutral after all visemes
+    #     neutral_weights = self.viseme_mapper.get_instantaneous_viseme_weights('sil')
+    #     await self._broadcast_blend_shapes(neutral_weights)
+    #     logger.info("✅ All visemes processed, returned to neutral")
+
     async def update_from_ai_visemes(self, ai_visemes: List[Dict]):
         """
         Process ForceAlign-generated visemes and convert to VRoid blend shapes
+        FIXED: No sleep delays between visemes
         """
         if not ai_visemes:
-            # Return to neutral/rest position
             neutral_weights = self.viseme_mapper.get_instantaneous_viseme_weights('sil')
             await self._broadcast_blend_shapes(neutral_weights)
             logger.info("🔄 No AI visemes - returning to neutral/rest position")
             return
 
-        logger.info(f"🎭 Processing {len(ai_visemes)} ForceAlign visemes")
+        logger.info(f"🎭 Processing {len(ai_visemes)} ForceAlign visemes - RAPID MODE")
 
-        # Process each viseme with proper timing
         for i, viseme_data in enumerate(ai_visemes):
             try:
-                # Extract data from ForceAlign viseme
                 viseme_string = str(viseme_data.get('viseme', 'sil'))
                 start_time = float(viseme_data.get('start_time', 0.0))
                 end_time = float(viseme_data.get('end_time', 0.1))
@@ -159,30 +212,24 @@ class EnhancedVRoidVisemeController:
 
                 # Get blend shape weights for this viseme
                 blend_shapes = self.viseme_mapper.get_instantaneous_viseme_weights(viseme_string)
-                
-                # Log the blend shapes being applied
-                active_shapes = {k: v for k, v in blend_shapes.items() if v > 0.01}
-                logger.info(f"🎯 BLEND_SHAPES[{i}]: {active_shapes}")
+                logger.info(f"🎯 BLEND_SHAPES[{i}]: {blend_shapes}")
 
-                # Apply the blend shapes
+                # Apply the blend shapes immediately
                 await self._broadcast_blend_shapes(blend_shapes)
-                
-                # Calculate hold duration based on viseme duration
-                duration = end_time - start_time
-                hold_time = max(0.1, min(duration, 0.5))  # Between 100ms and 500ms
-                
-                # Hold the viseme for the calculated duration
-                await asyncio.sleep(hold_time)
-                
+
+                # REMOVED: await asyncio.sleep(hold_time)  # This was causing the 'sil' spam!
+
             except Exception as e:
                 logger.error(f"Failed to process viseme {i}: {e}")
                 continue
+
+            finally:
+                self.is_processing_batch = False
 
         # Return to neutral after all visemes
         neutral_weights = self.viseme_mapper.get_instantaneous_viseme_weights('sil')
         await self._broadcast_blend_shapes(neutral_weights)
         logger.info("✅ All visemes processed, returned to neutral")
-
 
     async def _play_animation_sequence(self, frames: List):
         """DISABLED - Use direct updates instead"""
@@ -343,6 +390,10 @@ class EnhancedVRoidVisemeController:
         logger.info("🧪 Test broadcast completed")
 
     async def update_single_viseme(self, viseme: str):
+
+        if self.is_processing_batch:
+            logger.debug(f"🔇 Ignoring single viseme '{viseme}' during batch processing")
+            return
         """Update to a single viseme immediately (for manual control)"""
         weights = self.viseme_mapper.get_instantaneous_viseme_weights(viseme)
         await self._broadcast_blend_shapes(weights)
@@ -407,11 +458,13 @@ async def enhanced_process_audio_and_respond(audio, enhanced_viseme_controller: 
 
     logger.info(f"LLM response: {full_response}")
     logger.info(f"LLM took {time.time() - llm_time} seconds")
-    yield AdditionalOutputs({"type": "llm", "text": full_response})
+    # yield AdditionalOutputs({"type": "llm", "text": full_response})
 
     # ENHANCED TTS with ForceAlign Viseme Integration
     logger.info("Starting enhanced TTS streaming with ForceAlign visemes.")
-    
+
+    # Add this at the start of the TTS section
+    tts_response_sent = False
     # Collect all audio chunks first
     audio_chunks = []
     sample_rate = None
@@ -424,7 +477,9 @@ async def enhanced_process_audio_and_respond(audio, enhanced_viseme_controller: 
     
     sample_rate = tts_data[0][0]
     audio_chunks = [chunk for _, chunk in tts_data]
-    
+
+
+
     # Combine all audio chunks
     if audio_chunks:
         full_audio = np.concatenate(audio_chunks)
@@ -455,20 +510,64 @@ async def enhanced_process_audio_and_respond(audio, enhanced_viseme_controller: 
                 f"🎵 TTS_VISEME: viseme={enhanced_viseme['viseme']}, time={enhanced_viseme['start_time']:.3f}-{enhanced_viseme['end_time']:.3f}")
         
         # Prepare audio chunks for frontend
-        audio_chunks_for_frontend = []
-        for chunk in audio_chunks:
-            audio_chunks_for_frontend.append((sample_rate, chunk.tolist()))
-        
+        # audio_chunks_for_frontend = []
+        # for chunk in audio_chunks:
+        #     audio_chunks_for_frontend.append((sample_rate, chunk.tolist()))
+        #
+        # # Buffer for output data
+        # response_data = {
+        #     "type": "tts_response",
+        #     "text": full_response,
+        #     "audio_chunks": audio_chunks_for_frontend,
+        #     "visemes": enhanced_visemes
+        # }
+
+        # Create WAV file in memory
+        wav_buffer = io.BytesIO()
+        with wave.open(wav_buffer, 'wb') as wav_file:
+            wav_file.setnchannels(1)  # Mono
+            wav_file.setsampwidth(2)  # 16-bit
+            wav_file.setframerate(sample_rate)
+            wav_file.writeframes((full_audio * 32767).astype(np.int16).tobytes())
+
+        # Convert to base64 string
+        wav_bytes = wav_buffer.getvalue()
+        audio_base64 = base64.b64encode(wav_bytes).decode('utf-8')
+
         # Buffer for output data
         response_data = {
             "type": "tts_response",
             "text": full_response,
-            "audio_chunks": audio_chunks_for_frontend,
+            "audio_chunks": audio_base64,  # Now it's a base64 string!
             "visemes": enhanced_visemes
         }
         
         # Send all data to frontend at once
-        yield AdditionalOutputs(response_data)
+        # yield AdditionalOutputs(response_data)
+        # Send TTS response
+        # yield AdditionalOutputs({
+        #     "type": "tts_response",
+        #     "text": full_response,
+        #     "audio_chunks": audio_base64
+        # })
+        #
+        # # Send visemes separately
+        # yield AdditionalOutputs({
+        #     "type": "visemes",
+        #     "data": enhanced_visemes
+        # })
+
+        logger.info(f"🔍 TTS READY TO SEND: audio_chunks={len(audio_chunks)}, visemes={len(enhanced_visemes)}")
+
+        # Then modify your yield section:
+        if not tts_response_sent:
+            # Send all data to frontend at once
+            yield AdditionalOutputs(response_data)
+            logger.info("Delivered TTS response and visemes in one batch.")
+            tts_response_sent = True  # ← Prevent multiple sends
+        else:
+            logger.info("TTS response already sent, skipping duplicate")
+
         logger.info("Delivered TTS response and visemes in one batch.")
         
         all_visemes = enhanced_visemes

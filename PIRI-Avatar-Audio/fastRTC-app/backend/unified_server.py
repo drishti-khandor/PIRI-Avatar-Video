@@ -196,6 +196,12 @@ async def vrm_avatar_status_endpoint():
 async def stream_updates(webrtc_id: str):
     async def output_stream():
         async for output in stream.output_stream(webrtc_id):
+            # DEBUG: Log what we're actually sending
+            actual_data = output.args[0]
+            logger.info(f"🔍 SSE SENDING: {actual_data}")
+            logger.info(f"🔍 TYPE: {type(actual_data)}")
+            logger.info(f"🔍 KEYS: {actual_data.keys() if isinstance(actual_data, dict) else 'Not a dict'}")
+
             yield f"data: {json.dumps(output.args[0])}\n\n"
 
     return StreamingResponse(output_stream(), media_type="text/event-stream")
