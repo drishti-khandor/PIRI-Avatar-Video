@@ -12,7 +12,7 @@ import logging
 import threading
 from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass
-from viseme_extractor import VisemeExtractor, AdvancedVisemeExtractor
+from ForceAlign_viseme_integration import ForceAlignVisemeExtractor
 from dotenv import load_dotenv
 from fastapi import WebSocket
 import numpy as np
@@ -20,8 +20,8 @@ from fastrtc import AdditionalOutputs, get_stt_model, get_tts_model
 from openai import AzureOpenAI
 
 
-# Import the advanced viseme mapper (place this in the same directory as unified_server.py)
-from advanced_vroid_viseme_system import AdvancedVRoidVisemeMapper, VRoidVisemeAnimator, VisemeTransitionType
+# Import the simplified VRoid viseme mapper
+from vroid_viseme_mapper import VRoidVisemeMapper
 load_dotenv()
 logger = logging.getLogger(__name__)
 # Environment setup for Azure OpenAI
@@ -48,13 +48,13 @@ stt_model = get_stt_model()
 tts_model = get_tts_model(model="kokoro")
 
 
-# Initialize viseme extractor
+# Initialize ForceAlign viseme extractor
 try:
-    viseme_extractor = AdvancedVisemeExtractor()
-    logger.info("Using advanced viseme extractor")
-except:
-    viseme_extractor = VisemeExtractor()
-    logger.info("Using basic viseme extractor")
+    viseme_extractor = ForceAlignVisemeExtractor()
+    logger.info("Using ForceAlign viseme extractor")
+except Exception as e:
+    logger.error(f"Failed to initialize ForceAlign viseme extractor: {e}")
+    viseme_extractor = None
 @dataclass
 class EnhancedVisemeData:
     """Enhanced viseme data with additional context"""
@@ -75,22 +75,14 @@ class EnhancedVRoidVisemeController:
     def __init__(self):
         self.active_connections: List[WebSocket] = []
 
-        # Initialize advanced viseme mapping system
-        self.viseme_mapper = AdvancedVRoidVisemeMapper()
-        self.animator = VRoidVisemeAnimator(self.viseme_mapper)
+        # Initialize simplified viseme mapping system
+        self.viseme_mapper = VRoidVisemeMapper()
 
         # Current state
         self.current_blend_shapes = {}
-        self.current_emotion = "neutral"
         self.animation_queue = []
         self.is_animating = False
-
-        # Threading for smooth animation
-        self.animation_lock = threading.Lock()
-        self.should_stop_animation = False
-
-        # Start the animation system
-        self.animator.start_animation_loop()
+        self.animation_lock = asyncio.Lock()
 
         logger.info("✅ Enhanced VRoid Viseme Controller initialized")
 
@@ -122,8 +114,7 @@ class EnhancedVRoidVisemeController:
         message = {
             "type": "viseme_update",
             "blend_shapes": blend_shapes,
-            "timestamp": time.time(),
-            "emotion": self.current_emotion
+            "timestamp": time.time()
         }
 
         logger.debug(f"📡 Broadcasting to {len(self.active_connections)} connections: {len(blend_shapes)} blend shapes")
@@ -141,139 +132,75 @@ class EnhancedVRoidVisemeController:
         for connection in disconnected:
             self.disconnect(connection)
 
-    async def update_from_ai_visemes(self, ai_visemes: List[Dict], emotion: str = "neutral"):
+    async def update_from_ai_visemes(self, ai_visemes: List[Dict]):
         """
-        Process AI-generated visemes using advanced VRoid mapping
-        This replaces the simple mapping in the original code
+        Process ForceAlign-generated visemes and convert to VRoid blend shapes
         """
         if not ai_visemes:
             # Return to neutral/rest position
-            neutral_weights = self.viseme_mapper.get_instantaneous_viseme_weights('sil', emotion)
+            neutral_weights = self.viseme_mapper.get_instantaneous_viseme_weights('sil')
             await self._broadcast_blend_shapes(neutral_weights)
-            # ADD LOGGING HERE:
             logger.info("🔄 No AI visemes - returning to neutral/rest position")
             return
 
-        logger.info(f"🎭 Processing {len(ai_visemes)} AI visemes with emotion: {emotion}")
+        logger.info(f"🎭 Processing {len(ai_visemes)} ForceAlign visemes")
 
-        # ADD LOGGING HERE - Log raw AI visemes:
-        logger.info(f"📥 RAW_AI_VISEMES: {ai_visemes}")
-
-        # Convert AI visemes to phoneme sequence
-        phoneme_sequence = []
+        # Process each viseme with proper timing
         for i, viseme_data in enumerate(ai_visemes):
-            # Extract data from AI viseme
-            ai_viseme_id = str(viseme_data.get('viseme', '0'))
-            start_time = float(viseme_data.get('start_time', 0.0))
-            end_time = float(viseme_data.get('end_time', 0.1))
-            confidence = float(viseme_data.get('confidence', 1.0))
+            try:
+                # Extract data from ForceAlign viseme
+                viseme_string = str(viseme_data.get('viseme', 'sil'))
+                start_time = float(viseme_data.get('start_time', 0.0))
+                end_time = float(viseme_data.get('end_time', 0.1))
+                confidence = float(viseme_data.get('confidence', 1.0))
 
-            # ADD LOGGING HERE - Log each AI viseme:
-            logger.info(
-                f"🔢 AI_VISEME[{i}]: id={ai_viseme_id}, time={start_time:.3f}-{end_time:.3f}, confidence={confidence}")
+                logger.info(
+                    f"🔢 VISEME[{i}]: {viseme_string}, time={start_time:.3f}-{end_time:.3f}, confidence={confidence}")
 
-            # Map AI viseme to phoneme using improved mapping
-            phoneme = self._ai_viseme_to_phoneme(ai_viseme_id)
-            phoneme_sequence.append((phoneme, start_time, end_time))
+                # Get blend shape weights for this viseme
+                blend_shapes = self.viseme_mapper.get_instantaneous_viseme_weights(viseme_string)
+                
+                # Log the blend shapes being applied
+                active_shapes = {k: v for k, v in blend_shapes.items() if v > 0.01}
+                logger.info(f"🎯 BLEND_SHAPES[{i}]: {active_shapes}")
 
-            # ADD LOGGING HERE - Log the mapping result:
-            logger.info(f"🔄 MAPPING[{i}]: viseme_{ai_viseme_id} -> phoneme_{phoneme}")
+                # Apply the blend shapes
+                await self._broadcast_blend_shapes(blend_shapes)
+                
+                # Calculate hold duration based on viseme duration
+                duration = end_time - start_time
+                hold_time = max(0.1, min(duration, 0.5))  # Between 100ms and 500ms
+                
+                # Hold the viseme for the calculated duration
+                await asyncio.sleep(hold_time)
+                
+            except Exception as e:
+                logger.error(f"Failed to process viseme {i}: {e}")
+                continue
 
-        # ADD LOGGING HERE - Log complete phoneme sequence:
-        logger.info(f"📝 COMPLETE_PHONEME_SEQUENCE: {phoneme_sequence}")
+        # Return to neutral after all visemes
+        neutral_weights = self.viseme_mapper.get_instantaneous_viseme_weights('sil')
+        await self._broadcast_blend_shapes(neutral_weights)
+        logger.info("✅ All visemes processed, returned to neutral")
 
-        # Generate smooth animation sequence
-        try:
-            animation_frames = self.viseme_mapper.process_phoneme_sequence(
-                phoneme_sequence,
-                emotion=emotion,
-                transition_type=VisemeTransitionType.SMOOTH
-            )
-
-            # ADD LOGGING HERE - Log animation frames count:
-            logger.info(f"🎬 Generated {len(animation_frames)} animation frames for {len(phoneme_sequence)} phonemes")
-
-            # ADD LOGGING HERE - Log first few frames for debugging:
-            for i, frame in enumerate(animation_frames[:3]):
-                significant_shapes = {k: v for k, v in frame.blend_shapes.items() if v > 0.1}
-                logger.info(f"🎭 FRAME[{i}]: time={frame.timestamp:.3f}, shapes={significant_shapes}")
-
-            # Start animation playback
-            await self._play_animation_sequence(animation_frames)
-
-            # ADD LOGGING HERE - Confirm playback started:
-            logger.info(f"✅ Animation playback completed for {len(animation_frames)} frames")
-
-        except Exception as e:
-            logger.error(f"Failed to process viseme sequence: {e}")
-            # ADD LOGGING HERE - Log fallback:
-            logger.warning("⚠️ Falling back to neutral viseme due to processing error")
-            # Fallback to simple viseme
-            fallback_weights = self.viseme_mapper.get_instantaneous_viseme_weights('sil', emotion)
-            await self._broadcast_blend_shapes(fallback_weights)
-            logger.info(f"🔄 FALLBACK_WEIGHTS: {fallback_weights}")
-
-    def _ai_viseme_to_phoneme(self, ai_viseme_id: str) -> str:
-        """
-        Enhanced mapping from AI viseme IDs to phonemes
-        Based on the Microsoft Speech Platform viseme mapping you provided
-        """
-        viseme_to_phoneme_map = {
-            '0': 'sil',  # Silence
-            '1': 'AH',  # Open vowels (AE, AH, EH, UH)
-            '2': 'AA',  # Open back vowels (AA, AO, AW, OW)
-            '3': 'EY',  # Diphthongs (AY, EY, OY)
-            '4': 'ER',  # R-colored vowels (ER, AX, IX)
-            '5': 'IH',  # Close front vowels (IH, IY)
-            '6': 'UW',  # Close back vowels (UW, UH)
-            '7': 'P',  # Bilabials (B, P, M)
-            '8': 'F',  # Labiodentals (F, V)
-            '9': 'TH',  # Dental fricatives (TH, DH)
-            '10': 'T',  # Alveolars (T, D, N, L)
-            '11': 'S',  # Sibilants (S, Z)
-            '12': 'SH',  # Post-alveolars (SH, ZH, CH, JH)
-            '13': 'K',  # Velars (K, G, NG)
-            '14': 'R',  # Approximants (R, W, Y, HH)
-        }
-
-        phoneme = viseme_to_phoneme_map.get(ai_viseme_id, 'sil')
-        logger.info(f"🔄 AI_VISEME_MAPPING: {ai_viseme_id} -> {phoneme}")
-        logger.debug(f"Mapped AI viseme '{ai_viseme_id}' to phoneme '{phoneme}'")
-        return phoneme
-
-    # async def _play_animation_sequence(self, frames: List):
-    #     """Play back a sequence of animation frames in real-time"""
-    #     if not frames:
-    #         return
-    #
-    #     logger.info(f"🎬 Starting animation playback with {len(frames)} frames")
-    #
-    #     start_time = time.time()
-    #
-    #     for frame in frames:
-    #         # Calculate when this frame should be displayed
-    #         target_time = start_time + frame.timestamp
-    #         current_time = time.time()
-    #
-    #         # Wait until it's time for this frame
-    #         if target_time > current_time:
-    #             await asyncio.sleep(target_time - current_time)
-    #
-    #         # Send the frame
-    #         await self._broadcast_blend_shapes(frame.blend_shapes)
-    #
-    #     logger.info("✅ Animation playback completed")
 
     async def _play_animation_sequence(self, frames: List):
-        """Enhanced debug version of animation playback"""
-        if not frames:
-            logger.warning("❌ No frames provided to _play_animation_sequence")
-            return
+        """DISABLED - Use direct updates instead"""
+        logger.info("⚠️ _play_animation_sequence is disabled - using direct updates")
+        return
+
+        # STOP ANY EXISTING ANIMATION FIRST
+        self.is_animating = False
+        await asyncio.sleep(0.01)  # Brief pause to let current animation stop
+        self.is_animating = True
 
         logger.info(f"🎬 Starting animation playback with {len(frames)} frames")
 
         # Debug: Log first few frames to check structure
         for i, frame in enumerate(frames[:3]):
+            if not self.is_animating:
+                logger.info(f"🛑 Animation stopped at frame {i}")
+                break
             logger.info(f"🎭 Frame {i}: timestamp={getattr(frame, 'timestamp', 'MISSING')}, "
                         f"blend_shapes_count={len(getattr(frame, 'blend_shapes', {}))}")
             if hasattr(frame, 'blend_shapes'):
@@ -337,7 +264,9 @@ class EnhancedVRoidVisemeController:
                 break
 
         logger.info(f"✅ Animation playback completed: {frames_sent}/{len(frames)} frames sent, {errors} errors")
-
+        # ADD THESE LINES:
+        self.is_animating = False  # Mark animation as complete
+        logger.info("🏁 Animation state reset")
         # Final debug check
         if frames_sent == 0:
             logger.error("❌ NO FRAMES WERE SENT - This is why lip sync isn't working!")
@@ -369,7 +298,6 @@ class EnhancedVRoidVisemeController:
             "type": "viseme_update",
             "blend_shapes": blend_shapes,
             "timestamp": time.time(),
-            "emotion": self.current_emotion,
             "debug_info": {
                 "significant_shapes_count": len(significant_shapes),
                 "total_shapes_count": len(blend_shapes),
@@ -414,60 +342,27 @@ class EnhancedVRoidVisemeController:
         await self._broadcast_blend_shapes(test_blend_shapes)
         logger.info("🧪 Test broadcast completed")
 
-    async def update_single_viseme(self, phoneme: str, emotion: str = "neutral"):
+    async def update_single_viseme(self, viseme: str):
         """Update to a single viseme immediately (for manual control)"""
-        weights = self.viseme_mapper.get_instantaneous_viseme_weights(phoneme, emotion)
+        weights = self.viseme_mapper.get_instantaneous_viseme_weights(viseme)
         await self._broadcast_blend_shapes(weights)
         # ADD LOGGING HERE:
-        logger.info(f"🎯 VISEME: {phoneme} -> emotion: {emotion} -> weights: {list(weights.keys())}")
-        logger.debug(f"🎯 Updated to single viseme: {phoneme} with emotion: {emotion}")
+        logger.info(f"🎯 VISEME: {viseme} -> weights: {list(weights.keys())}")
+        logger.debug(f"🎯 Updated to single viseme: {viseme}")
 
-    async def set_emotion(self, emotion: str):
-        """Set the current emotional context"""
-        if emotion in ['neutral', 'happy', 'sad', 'surprised', 'angry']:
-            self.current_emotion = emotion
-            # Update current viseme with new emotion
-            if hasattr(self, '_last_phoneme'):
-                await self.update_single_viseme(self._last_phoneme, emotion)
-            logger.info(f"😊 Emotion set to: {emotion}")
-        else:
-            logger.warning(f"Unknown emotion: {emotion}")
-
-    async def play_phoneme_sequence(self, phoneme_sequence: List[Tuple[str, float, float]], emotion: str = "neutral"):
-        """
-        Play a sequence of phonemes with timing
-        This is for the /play_phonemes endpoint
-        """
-        try:
-            animation_frames = self.viseme_mapper.process_phoneme_sequence(
-                phoneme_sequence,
-                emotion=emotion,
-                transition_type=VisemeTransitionType.SMOOTH
-            )
-
-            await self._play_animation_sequence(animation_frames)
-
-        except Exception as e:
-            logger.error(f"Failed to play phoneme sequence: {e}")
-
-    def get_available_emotions(self) -> List[str]:
-        """Get list of available emotions"""
-        return ['neutral', 'happy', 'sad', 'surprised', 'angry']
 
     def get_current_state(self) -> Dict:
         """Get current controller state for debugging"""
         return {
             'connected_clients': len(self.active_connections),
-            'current_emotion': self.current_emotion,
             'current_blend_shapes': self.current_blend_shapes,
             'is_animating': self.is_animating
         }
 
     async def reset_to_neutral(self):
         """Reset avatar to neutral expression"""
-        neutral_weights = self.viseme_mapper.get_instantaneous_viseme_weights('sil', 'neutral')
+        neutral_weights = self.viseme_mapper.get_instantaneous_viseme_weights('sil')
         await self._broadcast_blend_shapes(neutral_weights)
-        self.current_emotion = 'neutral'
         logger.info("🔄 Reset to neutral expression")
 
 
@@ -514,93 +409,91 @@ def enhanced_process_audio_and_respond(audio, enhanced_viseme_controller: Enhanc
     logger.info(f"LLM took {time.time() - llm_time} seconds")
     yield AdditionalOutputs({"type": "llm", "text": full_response})
 
-    # ENHANCED TTS with Advanced VRoid Viseme Integration
-    logger.info("Starting enhanced TTS streaming with advanced VRoid visemes.")
-    chunk_index = 0
-    accumulated_time = 0.0
-    all_visemes = []
-
+    # ENHANCED TTS with ForceAlign Viseme Integration
+    logger.info("Starting enhanced TTS streaming with ForceAlign visemes.")
+    
+    # Collect all audio chunks first
+    audio_chunks = []
+    sample_rate = None
+    
+    for sr, audio_chunk in tts_model.stream_tts_sync(full_response):
+        sample_rate = sr
+        audio_chunks.append(audio_chunk)
+    
+    # Combine all audio chunks
+    if audio_chunks:
+        full_audio = np.concatenate(audio_chunks)
+        
+        # Extract visemes using ForceAlign from the complete audio
+        try:
+            if viseme_extractor:
+                visemes = viseme_extractor.extract_visemes_async(full_audio, sample_rate, full_response)
+                logger.info(f"Extracted {len(visemes)} visemes using ForceAlign")
+            else:
+                logger.warning("No viseme extractor available")
+                visemes = []
+        except Exception as e:
+            logger.error(f"Failed to extract visemes: {e}")
+            visemes = []
+        
+        # Format visemes for frontend
+        enhanced_visemes = []
+        for viseme in visemes:
+            enhanced_viseme = {
+                "viseme": str(viseme.viseme),
+                "start_time": float(viseme.start_time),
+                "end_time": float(viseme.end_time),
+                "confidence": float(viseme.confidence)
+            }
+            enhanced_visemes.append(enhanced_viseme)
+            logger.info(
+                f"🎵 TTS_VISEME: viseme={enhanced_viseme['viseme']}, time={enhanced_viseme['start_time']:.3f}-{enhanced_viseme['end_time']:.3f}")
+        
+        # Prepare audio chunks for frontend
+        audio_chunks_for_frontend = []
+        for chunk in audio_chunks:
+            audio_chunks_for_frontend.append((sample_rate, chunk.tolist()))
+        
+        # Buffer for output data
+        response_data = {
+            "type": "tts_response",
+            "text": full_response,
+            "audio_chunks": audio_chunks_for_frontend,
+            "visemes": enhanced_visemes
+        }
+        
+        # Send all data to frontend at once
+        yield AdditionalOutputs(response_data)
+        logger.info("Delivered TTS response and visemes in one batch.")
+        
+        all_visemes = enhanced_visemes
+    else:
+        logger.warning("No audio chunks generated")
+        all_visemes = []
+    
+    # Process avatar visemes in background
     try:
-        for sample_rate, audio_chunk in tts_model.stream_tts_sync(full_response):
-            # Calculate timing for this chunk
-            chunk_duration = len(audio_chunk) / sample_rate
-            chunk_start_time = accumulated_time
-            accumulated_time += chunk_duration
-
-            # Extract visemes from this audio chunk
+        def update_avatar_enhanced():
             try:
-                visemes = viseme_extractor.extract_visemes_from_chunk(audio_chunk, sample_rate)
+                # Create new event loop for this thread
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
 
-                # Adjust viseme timing to global timeline
-                enhanced_visemes = []
-                for viseme in visemes:
-                    enhanced_viseme = {
-                        "viseme": str(viseme.viseme),
-                        "start_time": float(viseme.start_time + chunk_start_time),
-                        "end_time": float(viseme.end_time + chunk_start_time),
-                        "confidence": float(viseme.confidence)
-                    }
-                    enhanced_visemes.append(enhanced_viseme)
-                    # ADD LOGGING HERE:
-                    logger.info(
-                        f"🎵 TTS_VISEME: chunk={chunk_index}, viseme={enhanced_viseme['viseme']}, time={enhanced_viseme['start_time']:.3f}-{enhanced_viseme['end_time']:.3f}")
-                    all_visemes.append(enhanced_viseme)
+                # Update avatar with enhanced visemes
+                loop.run_until_complete(
+                    enhanced_viseme_controller.update_from_ai_visemes(all_visemes)
+                )
 
-                # Send viseme data to frontend
-                viseme_data = {
-                    "type": "visemes",
-                    "chunk_index": chunk_index,
-                    "visemes": enhanced_visemes,
-                    "chunk_duration": float(chunk_duration),
-                    "chunk_start_time": float(chunk_start_time)
-                }
-
-                logger.info(f"Enhanced visemes for chunk {chunk_index}: {[v['viseme'] for v in enhanced_visemes]}")
-                yield AdditionalOutputs(viseme_data)
-
-                # ENHANCED: Update avatar with advanced VRoid system
-                def update_avatar_enhanced():
-                    try:
-                        # Detect emotion from text (simple keyword-based)
-                        emotion = detect_emotion_from_text(full_response)
-
-                        # Create new event loop for this thread
-                        loop = asyncio.new_event_loop()
-                        asyncio.set_event_loop(loop)
-
-                        # Update avatar with enhanced visemes
-                        loop.run_until_complete(
-                            enhanced_viseme_controller.update_from_ai_visemes(enhanced_visemes, emotion)
-                        )
-
-                        loop.close()
-
-                    except Exception as e:
-                        logger.error(f"Failed to update enhanced avatar: {e}")
-
-                # Start avatar update in background thread
-                threading.Thread(target=update_avatar_enhanced, daemon=True).start()
-
+                loop.close()
             except Exception as e:
-                logger.error(f"Viseme extraction failed for chunk {chunk_index}: {e}")
-                # Send default silence viseme
-                yield AdditionalOutputs({
-                    "type": "visemes",
-                    "chunk_index": chunk_index,
-                    "visemes": [{"viseme": "0", "start_time": chunk_start_time, "end_time": accumulated_time,
-                                 "confidence": 1.0}],
-                    "chunk_duration": chunk_duration,
-                    "chunk_start_time": chunk_start_time
-                })
+                logger.error(f"Failed to update enhanced avatar: {e}")
 
-            # Yield the audio chunk for playback
-            yield sample_rate, audio_chunk
-            chunk_index += 1
-
-        logger.info("Finished enhanced TTS streaming with advanced visemes.")
-
+        # Update avatar in background thread
+        threading.Thread(target=update_avatar_enhanced, daemon=True).start()
     except Exception as e:
-        logger.error(f"Enhanced TTS failed: {e}")
+        logger.error(f"Failed to start avatar update thread: {e}")
+
+    logger.info("Finished enhanced TTS streaming with ForceAlign visemes.")
 
     messages.append({"role": "assistant", "content": full_response + " "})
 

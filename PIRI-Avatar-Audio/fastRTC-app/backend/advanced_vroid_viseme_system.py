@@ -60,10 +60,10 @@ class AdvancedVRoidVisemeMapper:
         self.animation_queue = []
         self.is_animating = False
 
-        # Timing controls
-        self.frame_rate = 60  # FPS for smooth animation
-        self.transition_speed = 0.15  # Seconds for transitions
-        self.min_viseme_duration = 0.08  # Minimum time to hold a viseme
+        # Timing controls - MUCH MORE AGGRESSIVE
+        self.frame_rate = 5  # DRASTICALLY reduced to 5 FPS
+        self.transition_speed = 0.01  # INSTANT transitions
+        self.min_viseme_duration = 0.2  # MUCH longer holds
 
     def _initialize_vroid_mappings(self) -> Dict[str, Dict[str, float]]:
         """
@@ -94,8 +94,8 @@ class AdvancedVRoidVisemeMapper:
             },
 
             'ey': {  # Diphthongs (AY, EY, OY) - Smile-like
-                'Fcl_MTH_E': 1.0,
-                'Fcl_MTH_Small': 0.3,
+                'Fcl_MTH_A': 0.6,     # More open mouth instead of E
+                'Fcl_MTH_Large': 0.4, # Larger opening
                 'Fcl_ALL_Joy': 0.2,
                 'Fcl_EYE_Joy': 0.3
             },
@@ -126,21 +126,21 @@ class AdvancedVRoidVisemeMapper:
             },
 
             'ff': {  # Labiodentals (F, V) - Lower lip to teeth
-                'Fcl_MTH_E': 0.6,
-                'Fcl_MTH_Close': 0.4,
-                'Fcl_MTH_Down': 0.3
+                'Fcl_MTH_Close': 0.8,  # Much more closed
+                'Fcl_MTH_Down': 0.6,   # Much more down
+                'Fcl_EYE_Natural': 0.9
             },
 
             'th': {  # Dental fricatives (TH, DH) - Tongue between teeth
-                'Fcl_MTH_E': 0.5,
-                'Fcl_MTH_Small': 0.7,
-                'Fcl_MTH_A': 0.2
+                'Fcl_MTH_A': 0.9,     # Wide open instead
+                'Fcl_MTH_Large': 0.6, # Large opening
+                'Fcl_EYE_Natural': 0.9
             },
 
             'dd': {  # Alveolars (T, D, N, L) - Tongue to roof
-                'Fcl_MTH_E': 0.4,
-                'Fcl_MTH_Small': 0.8,
-                'Fcl_MTH_Close': 0.3
+                'Fcl_MTH_Close': 0.9,  # More closed mouth
+                'Fcl_MTH_Small': 0.4,  # Less small
+                'Fcl_EYE_Natural': 0.9
             },
 
             'ss': {  # Sibilants (S, Z) - Narrow gap
@@ -150,9 +150,9 @@ class AdvancedVRoidVisemeMapper:
             },
 
             'sh': {  # Post-alveolars (SH, ZH, CH, JH) - Rounded narrow
-                'Fcl_MTH_U': 0.6,
-                'Fcl_MTH_Small': 0.9,
-                'Fcl_MTH_O': 0.4
+                'Fcl_MTH_U': 1.0,     # Full pucker
+                'Fcl_MTH_O': 0.8,     # Round mouth
+                'Fcl_EYE_Natural': 0.9
             },
 
             'kk': {  # Velars (K, G, NG) - Back of tongue
@@ -375,19 +375,23 @@ class AdvancedVRoidVisemeMapper:
         for shape, weight in weights.items():
             normalized[shape] = max(0.0, min(1.0, weight))
 
-        # Apply mutual exclusivity rules for conflicting mouth shapes
-        mouth_shapes = ['Fcl_MTH_A', 'Fcl_MTH_E', 'Fcl_MTH_I', 'Fcl_MTH_O', 'Fcl_MTH_U', 'Fcl_MTH_Close']
+        # STRONGER mutual exclusivity for conflicting mouth shapes
+        mouth_shapes = ['Fcl_MTH_A', 'Fcl_MTH_E', 'Fcl_MTH_I', 'Fcl_MTH_O', 'Fcl_MTH_U', 'Fcl_MTH_Close',
+                        'Fcl_MTH_Neutral']
         mouth_weights = {shape: normalized.get(shape, 0.0) for shape in mouth_shapes if shape in normalized}
 
         if mouth_weights:
-            # Find dominant mouth shape and reduce others
+            # Find dominant mouth shape
             max_shape = max(mouth_weights.keys(), key=lambda k: mouth_weights[k])
             max_weight = mouth_weights[max_shape]
 
+            # ZERO OUT all other mouth shapes for cleaner visemes
             for shape in mouth_weights:
-                if shape != max_shape and shape in normalized:
-                    # Reduce conflicting mouth shapes
-                    normalized[shape] *= (1.0 - max_weight * 0.7)
+                if shape != max_shape:
+                    normalized[shape] = 0.0
+                else:
+                    # Boost the dominant shape for more visible movement
+                    normalized[shape] = min(1.0, max_weight * 1.2)
 
         return normalized
 

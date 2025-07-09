@@ -300,6 +300,7 @@ export function EnhancedVRMAvatarChat() {
             ws.onmessage = (event) => {
                 try {
                     const data: VRMWebSocketData = JSON.parse(event.data);
+                    console.log('Received VRM WebSocket message:', data);
                     if (data.type === 'viseme_update') {
                         if (data.blend_shapes) {
                             setCurrentBlendShapes(data.blend_shapes);
@@ -663,7 +664,7 @@ export function EnhancedVRMAvatarChat() {
     }, []);
 
     // Initialize Enhanced AI Chat SSE (Fixed URL)
-    const initEnhancedAIChatSSE = useCallback(() => {
+const initEnhancedAIChatSSE = useCallback(() => {
         const eventSource = new EventSource(`http://localhost:8001/updates?webrtc_id=${webrtcId.current}`);
 
         eventSource.onmessage = (event) => {
@@ -676,6 +677,69 @@ export function EnhancedVRMAvatarChat() {
                         text: data.text,
                         timestamp: Date.now()
                     }]);
+                } else if (data.type === "tts_response") {
+                    console.log("📦 Received batched TTS response:", data);
+                    
+                    // Process all audio chunks and create audio blob
+                    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+                    const audioBuffers: AudioBuffer[] = [];
+                    let totalLength = 0;
+
+                    // Process each audio chunk
+                    data.audio_chunks.forEach(([sampleRate, audioArray]: [number, number[]], index: number) => {
+                        const audioBuffer = audioContext.createBuffer(1, audioArray.length, sampleRate);
+                        const channelData = audioBuffer.getChannelData(0);
+                        
+                        for (let i = 0; i < audioArray.length; i++) {
+                            channelData[i] = audioArray[i] / 32768;
+                        }
+                        
+                        audioBuffers.push(audioBuffer);
+                        totalLength += audioArray.length;
+                        
+                        console.log(`🎵 Processed audio chunk ${index}: ${audioArray.length} samples at ${sampleRate}Hz`);
+                    });
+
+                    // Create combined audio buffer
+                    if (audioBuffers.length > 0) {
+                        const combinedBuffer = audioContext.createBuffer(1, totalLength, audioBuffers[0].sampleRate);
+                        const combinedChannelData = combinedBuffer.getChannelData(0);
+                        
+                        let offset = 0;
+                        audioBuffers.forEach(buffer => {
+                            const channelData = buffer.getChannelData(0);
+                            combinedChannelData.set(channelData, offset);
+                            offset += channelData.length;
+                        });
+                        
+                        // Create and play audio
+                        const audioSource = audioContext.createBufferSource();
+                        audioSource.buffer = combinedBuffer;
+                        audioSource.connect(audioContext.destination);
+                        audioSource.start();
+                        
+                        console.log(`🔊 Playing combined audio: ${totalLength} samples`);
+                    }
+                    
+                    // Process visemes for animation
+                    if (data.visemes && data.visemes.length > 0) {
+                        console.log(`🎭 Processing ${data.visemes.length} visemes for animation`);
+                        
+                        // Schedule viseme updates based on timing
+                        data.visemes.forEach((viseme: any, index: number) => {
+                            setTimeout(() => {
+                                console.log(`⏲️ Applying viseme ${viseme.viseme} at ${viseme.start_time}s`);
+                                // Trigger avatar update via WebSocket
+                                if (avatarWebSocketRef.current?.readyState === WebSocket.OPEN) {
+                                    avatarWebSocketRef.current.send(JSON.stringify({
+                                        type: "update_viseme",
+                                        phoneme: viseme.viseme,
+                                        emotion: "neutral"
+                                    }));
+                                }
+                            }, viseme.start_time * 1000); // Convert to milliseconds
+                        });
+                    }
                 } else if (data.type === "visemes") {
                     console.log("Received enhanced VRM visemes from AI:", data);
                     // Enhanced visemes are automatically processed by the backend
