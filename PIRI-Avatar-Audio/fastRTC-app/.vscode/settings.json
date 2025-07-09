@@ -1,0 +1,17 @@
+{
+  "files.exclude": {
+    "backend/venv/lib/python3.13/site-packages/gradio/_frontend_code/lite/src/theme.css": true,
+    "backend/venv/lib/python3.13/site-packages/gradio/_frontend_code/theme/*/pollen.css": true,
+    "backend/venv/lib/python3.13/site-packages/gradio/_frontend_code/theme/*/theme.css": true,
+    "backend/venv/lib/python3.13/site-packages/gradio/_frontend_code/preview/test/test/**/.eggs/": true,
+    "backend/venv/lib/python3.13/site-packages/gradio/_frontend_code/preview/test/test/**/dist/": true,
+    "backend/venv/lib/python3.13/site-packages/gradio/_frontend_code/preview/test/test/**/*.pyc": true,
+    "backend/venv/lib/python3.13/site-packages/gradio/_frontend_code/preview/test/test/**/__pycache__/": true,
+    "backend/venv/lib/python3.13/site-packages/gradio/_frontend_code/preview/test/test/**/*.py[cod]": true,
+    "backend/venv/lib/python3.13/site-packages/gradio/_frontend_code/preview/test/test/**/*$py.class": true,
+    "backend/venv/lib/python3.13/site-packages/gradio/_frontend_code/preview/test/test/__tmp/*": true,
+    "backend/venv/lib/python3.13/site-packages/gradio/_frontend_code/preview/test/test/**/*.pyi": true,
+    "backend/venv/lib/python3.13/site-packages/gradio/_frontend_code/preview/test/test/**/node_modules": true,
+    "backend/venv/**/*": true
+  }
+}

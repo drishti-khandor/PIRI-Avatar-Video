@@ -34,9 +34,9 @@
 // }
 
 
-// app/layout.tsx
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -50,8 +50,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "3D Avatar + AI Chat",
-  description: "Unified 3D Avatar with Real-time AI Chat",
+  title: "PIRI Avatar Chat",
+  description: "Real-time avatar chat with voice interaction",
 };
 
 export default function RootLayout({
@@ -64,7 +64,7 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        {children}
+        <ErrorBoundary>{children}</ErrorBoundary>
       </body>
     </html>
   );

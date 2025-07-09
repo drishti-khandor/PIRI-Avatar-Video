@@ -4,7 +4,8 @@ PIRI-Avatar-Audio/fastRTC-app/frontend/.next/
 PIRI-Avatar-Audio/fastRTC-app/frontend/out/
 PIRI-Avatar-Audio/fastRTC-app/backend/.env
 # Python
-.venv/
+venv/
 __pycache__/
 *.pyc
 *.pyo
+potty/

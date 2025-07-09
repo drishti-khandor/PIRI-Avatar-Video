@@ -1,0 +1,5 @@
+INFO:     Will watch for changes in these directories: ['/Users/fouxan/PIRI-Avatar-Video/PIRI-Avatar-Audio/fastRTC-app']
+INFO:     Uvicorn running on http://127.0.0.1:8001 (Press CTRL+C to quit)
+INFO:     Started reloader process [50050] using StatReload
+ERROR:    Error loading ASGI app. Could not import module "backend.main".
+INFO:     Stopping reloader process [50050]
