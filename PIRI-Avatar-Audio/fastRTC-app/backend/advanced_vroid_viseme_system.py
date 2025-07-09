@@ -61,9 +61,14 @@ class AdvancedVRoidVisemeMapper:
         self.is_animating = False
 
         # Timing controls
-        self.frame_rate = 60  # FPS for smooth animation
-        self.transition_speed = 0.15  # Seconds for transitions
-        self.min_viseme_duration = 0.08  # Minimum time to hold a viseme
+        # self.frame_rate = 60  # FPS for smooth animation
+        # self.transition_speed = 0.15  # Seconds for transitions
+        # self.min_viseme_duration = 0.08  # Minimum time to hold a viseme
+
+        # REDUCE frame rate for real-time sync
+        self.frame_rate = 20  # Reduce from 60 to 20 FPS
+        self.transition_speed = 0.1  # Faster transitions
+        self.min_viseme_duration = 0.1  # Shorter minimum duration
 
     def _initialize_vroid_mappings(self) -> Dict[str, Dict[str, float]]:
         """
@@ -218,6 +223,10 @@ class AdvancedVRoidVisemeMapper:
                 'Fcl_ALL_Angry': 0.3,
                 'Fcl_BRW_Angry': 0.5,
                 'Fcl_EYE_Angry': 0.4
+            },
+            'neutral': {
+                'Fcl_ALL_Neutral': 0.8,
+                'Fcl_EYE_Natural': 0.9,
             }
         }
 
@@ -368,6 +377,29 @@ class AdvancedVRoidVisemeMapper:
 
         return result
 
+    # def _normalize_weights(self, weights: Dict[str, float]) -> Dict[str, float]:
+    #     """Normalize weights to ensure realistic blend shape values"""
+    #     # Clamp all weights to [0, 1] range
+    #     normalized = {}
+    #     for shape, weight in weights.items():
+    #         normalized[shape] = max(0.0, min(1.0, weight))
+    #
+    #     # Apply mutual exclusivity rules for conflicting mouth shapes
+    #     mouth_shapes = ['Fcl_MTH_A', 'Fcl_MTH_E', 'Fcl_MTH_I', 'Fcl_MTH_O', 'Fcl_MTH_U', 'Fcl_MTH_Close']
+    #     mouth_weights = {shape: normalized.get(shape, 0.0) for shape in mouth_shapes if shape in normalized}
+    #
+    #     if mouth_weights:
+    #         # Find dominant mouth shape and reduce others
+    #         max_shape = max(mouth_weights.keys(), key=lambda k: mouth_weights[k])
+    #         max_weight = mouth_weights[max_shape]
+    #
+    #         for shape in mouth_weights:
+    #             if shape != max_shape and shape in normalized:
+    #                 # Reduce conflicting mouth shapes
+    #                 normalized[shape] *= (1.0 - max_weight * 0.7)
+    #
+    #     return normalized
+
     def _normalize_weights(self, weights: Dict[str, float]) -> Dict[str, float]:
         """Normalize weights to ensure realistic blend shape values"""
         # Clamp all weights to [0, 1] range
@@ -375,19 +407,22 @@ class AdvancedVRoidVisemeMapper:
         for shape, weight in weights.items():
             normalized[shape] = max(0.0, min(1.0, weight))
 
-        # Apply mutual exclusivity rules for conflicting mouth shapes
-        mouth_shapes = ['Fcl_MTH_A', 'Fcl_MTH_E', 'Fcl_MTH_I', 'Fcl_MTH_O', 'Fcl_MTH_U', 'Fcl_MTH_Close']
+        # CRITICAL: Apply stronger mutual exclusivity for conflicting mouth shapes
+        mouth_shapes = ['Fcl_MTH_A', 'Fcl_MTH_E', 'Fcl_MTH_I', 'Fcl_MTH_O', 'Fcl_MTH_U', 'Fcl_MTH_Close',
+                        'Fcl_MTH_Neutral']
         mouth_weights = {shape: normalized.get(shape, 0.0) for shape in mouth_shapes if shape in normalized}
 
         if mouth_weights:
-            # Find dominant mouth shape and reduce others
+            # Find dominant mouth shape
             max_shape = max(mouth_weights.keys(), key=lambda k: mouth_weights[k])
             max_weight = mouth_weights[max_shape]
 
+            # ZERO OUT all other mouth shapes (instead of just reducing them)
             for shape in mouth_weights:
-                if shape != max_shape and shape in normalized:
-                    # Reduce conflicting mouth shapes
-                    normalized[shape] *= (1.0 - max_weight * 0.7)
+                if shape != max_shape:
+                    normalized[shape] = 0.0
+                else:
+                    normalized[shape] = max_weight
 
         return normalized
 

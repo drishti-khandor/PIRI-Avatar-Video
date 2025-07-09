@@ -267,6 +267,16 @@ export function EnhancedVRMAvatarChat() {
     const [audioLevel, setAudioLevel] = useState(0);
     const [vrmLoaded, setVrmLoaded] = useState(false);
     const [dominantViseme, setDominantViseme] = useState<string>('sil');
+    // Add this state for debugging
+    const [audioSyncInfo, setAudioSyncInfo] = useState<{
+        audioPlaying: boolean;
+        audioTime: number;
+        lastBlendShapeTime: number;
+    }>({
+        audioPlaying: false,
+        audioTime: 0,
+        lastBlendShapeTime: 0
+    });
 
     // Refs
     const webrtcClientRef = useRef<EnhancedVRMWebRTCClient | null>(null);
@@ -279,6 +289,13 @@ export function EnhancedVRMAvatarChat() {
     const vrmRef = useRef<any>(null);
     const rendererRef = useRef<any>(null);
     const webrtcId = useRef(Math.random().toString(36).substring(7));
+    // Add these refs for audio timing
+    const audioStartTimeRef = useRef<number | null>(null);
+    const audioElementRef = useRef<HTMLAudioElement | null>(null);
+    // Store animation frames for synced playback
+    const animationFramesRef = useRef<Array<{timestamp: number, blendShapes: Record<string, number>}>>([]);
+    const animationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
 
     // Auto-scroll chat to bottom
     useEffect(() => {
@@ -557,92 +574,387 @@ export function EnhancedVRMAvatarChat() {
 
     // Add this VRM expression mapping
         const VRM_EXPRESSION_MAPPING = {
+            // 'Fcl_MTH_A': 'aa',
+            // 'Fcl_MTH_E': 'ee',
+            // 'Fcl_MTH_I': 'ih',
+            // 'Fcl_MTH_O': 'ou',
+            // 'Fcl_MTH_U': 'ou',
+            // 'Fcl_MTH_Small': 'ih',
+            // 'Fcl_MTH_Large': 'aa',
+            // 'Fcl_MTH_Close': 'sil',
+            // 'Fcl_MTH_Neutral': 'neutral',
+            // 'Fcl_ALL_Joy': 'happy',
+            // 'Fcl_ALL_Sorrow': 'sad',
+            // 'Fcl_ALL_Surprised': 'surprised',
+            // 'Fcl_ALL_Angry': 'angry',
+            // 'Fcl_EYE_Natural': 'relaxed',
+            // 'Fcl_EYE_Joy': 'happy',
+            // 'Fcl_EYE_Sorrow': 'sad'
+
+            // 🔤 Mouth Visemes (Phoneme-based)
             'Fcl_MTH_A': 'aa',
             'Fcl_MTH_E': 'ee',
             'Fcl_MTH_I': 'ih',
             'Fcl_MTH_O': 'ou',
             'Fcl_MTH_U': 'ou',
-            'Fcl_MTH_Small': 'ih',
-            'Fcl_MTH_Large': 'aa',
-            'Fcl_MTH_Close': 'sil',
+            'Fcl_MTH_Small': 'ih',       // Smaller mouth shape
+            'Fcl_MTH_Large': 'aa',       // Wider mouth shape
+            'Fcl_MTH_Close': 'sil',      // Mouth closed (e.g., for M, B, P)
             'Fcl_MTH_Neutral': 'neutral',
+            'Fcl_MTH_Down': 'sad',       // Drooping mouth = sadness or frown
+            'Fcl_MTH_Fun': 'smile',      // Smirk or playful smile
+
+            // 😊 Emotions (Face-wide)
             'Fcl_ALL_Joy': 'happy',
             'Fcl_ALL_Sorrow': 'sad',
             'Fcl_ALL_Surprised': 'surprised',
             'Fcl_ALL_Angry': 'angry',
+            'Fcl_ALL_Neutral': 'neutral',
+
+            // 👀 Eye expressions
             'Fcl_EYE_Natural': 'relaxed',
             'Fcl_EYE_Joy': 'happy',
-            'Fcl_EYE_Sorrow': 'sad'
+            'Fcl_EYE_Sorrow': 'sad',
+            'Fcl_EYE_Surprised': 'surprised',
+            'Fcl_EYE_Angry': 'angry',
+            'Fcl_EYE_Close': 'blink',          // Eye closed/blink
+            'Fcl_EYE_Wide': 'wide',            // Eye wide open
+            'Fcl_EYE_ClosedSmile': 'eye_smile',// Smiling with eyes
+
+            // 👁 Brows
+            'Fcl_BRW_Angry': 'angry',
+            'Fcl_BRW_Up': 'surprised',
+            'Fcl_BRW_Down': 'sad',
+            'Fcl_BRW_Neutral': 'neutral',
+
+            // 🤷 Additional expressions
+            'Fcl_CHK_Rise': 'smile_cheek',     // Raised cheeks (often with smile)
+            'Fcl_CHK_Puff': 'puffed',          // Cheek puff (for blowing or effort)
+            'Fcl_TNG_Up': 'tongue_up',         // Tongue visible
+            'Fcl_TNG_Down': 'tongue_down'
+
+
         };
 
-    // Apply VRM/GLB blend shapes
+    // // Apply VRM/GLB blend shapes
+    // const applyVRMBlendShapes = useCallback((blendShapes: Record<string, number>) => {
+    //     console.log()
+    //     if (!vrmRef.current) return;
+    //     else console.log('workingggggggg')
+    //     // Check if this is a VRM with expression manager
+    //     // if (vrmRef.current.expressionManager) {
+    //     //     for (const [shapeName, value] of Object.entries(blendShapes)) {
+    //     //         if (vrmRef.current.expressionManager.expressionMap[shapeName]) {
+    //     //             vrmRef.current.expressionManager.setValue(shapeName, Math.max(0, Math.min(1, value)));
+    //     //             console.log(`Setting VRM expression: ${shapeName} to ${value}`);
+    //     //         }
+    //     //
+    //     //     }
+    //     //     vrmRef.current.expressionManager.update();
+    //     // }
+    //
+    //
+    //     // Replace the expression manager section with:
+    //     if (vrmRef.current.expressionManager) {
+    //         console.log('Available VRM expressions:', Object.keys(vrmRef.current.expressionManager.expressionMap || {}));
+    //
+    //         for (const [shapeName, value] of Object.entries(blendShapes)) {
+    //             // Try direct mapping first
+    //             if (vrmRef.current.expressionManager.expressionMap[shapeName]) {
+    //                 vrmRef.current.expressionManager.setValue(shapeName, Math.max(0, Math.min(1, value)));
+    //                 console.log(`✅ Direct VRM expression: ${shapeName} = ${value}`);
+    //             }
+    //             // Try mapped name
+    //             else if (VRM_EXPRESSION_MAPPING[shapeName]) {
+    //                 const mappedName = VRM_EXPRESSION_MAPPING[shapeName];
+    //                 if (vrmRef.current.expressionManager.expressionMap[mappedName]) {
+    //                     vrmRef.current.expressionManager.setValue(mappedName, Math.max(0, Math.min(1, value)));
+    //                     console.log(`✅ Mapped VRM expression: ${shapeName} -> ${mappedName} = ${value}`);
+    //                 }
+    //             }
+    //             else {
+    //                 console.log(`❌ No VRM expression found for: ${shapeName}`);
+    //             }
+    //         }
+    //         vrmRef.current.expressionManager.update();
+    //     }
+    //
+    //     // else {
+    //     //     // Fallback to direct morph target manipulation (GLB or VRM without expression manager)
+    //     //     const targetObject = vrmRef.current.scene || vrmRef.current;
+    //     //
+    //     //     targetObject.traverse((child: any) => {
+    //     //         if (child.isMesh && child.morphTargetInfluences && child.morphTargetDictionary) {
+    //     //             // Smooth decay
+    //     //             for (let i = 0; i < child.morphTargetInfluences.length; i++) {
+    //     //                 child.morphTargetInfluences[i] *= 0.9;
+    //     //             }
+    //     //             console.log('Applying blend shapes to mesh:', child.name);
+    //     //
+    //     //             // Apply new values
+    //     //             for (const [shapeName, value] of Object.entries(blendShapes)) {
+    //     //                 const index = child.morphTargetDictionary[shapeName];
+    //     //                 if (index !== undefined && value > 0.001) {
+    //     //                     const currentValue = child.morphTargetInfluences[index] || 0;
+    //     //                     child.morphTargetInfluences[index] = currentValue + (value - currentValue) * 0.3;
+    //     //                 }
+    //     //                 console.log(`Setting morph target: ${shapeName} to ${child.morphTargetInfluences[index]}`);
+    //     //             }
+    //     //         }
+    //     //     });
+    //     // }
+    //
+    //     else {
+    //         // Fallback to direct morph target manipulation
+    //         const targetObject = vrmRef.current.scene || vrmRef.current;
+    //         let foundMorphTargets = false;
+    //
+    //         targetObject.traverse((child: any) => {
+    //             if (child.isMesh && child.morphTargetInfluences && child.morphTargetDictionary) {
+    //                 foundMorphTargets = true;
+    //                 console.log(`🎭 Processing morph targets for mesh: ${child.name}`);
+    //                 console.log(`Available morph targets:`, Object.keys(child.morphTargetDictionary));
+    //
+    //                 // Smooth decay
+    //                 for (let i = 0; i < child.morphTargetInfluences.length; i++) {
+    //                     child.morphTargetInfluences[i] *= 0.9;
+    //                 }
+    //
+    //                 // Apply new values
+    //                 for (const [shapeName, value] of Object.entries(blendShapes)) {
+    //                     const index = child.morphTargetDictionary[shapeName];
+    //                     if (index !== undefined && value > 0.001) {
+    //                         const currentValue = child.morphTargetInfluences[index] || 0;
+    //                         child.morphTargetInfluences[index] = currentValue + (value - currentValue) * 0.3;
+    //                         console.log(`✅ Applied morph: ${shapeName}[${index}] = ${child.morphTargetInfluences[index]}`);
+    //                     } else if (index === undefined) {
+    //                         console.log(`❌ Morph target not found: ${shapeName}`);
+    //                     }
+    //                 }
+    //             }
+    //         });
+    //
+    //         if (!foundMorphTargets) {
+    //             console.error("❌ No morph targets found in VRM model!");
+    //         }
+    //     }
+    // }, []);
+
     const applyVRMBlendShapes = useCallback((blendShapes: Record<string, number>) => {
-        console.log()
-        if (!vrmRef.current) return;
-        else console.log('workingggggggg')
-        // Check if this is a VRM with expression manager
-        // if (vrmRef.current.expressionManager) {
-        //     for (const [shapeName, value] of Object.entries(blendShapes)) {
-        //         if (vrmRef.current.expressionManager.expressionMap[shapeName]) {
-        //             vrmRef.current.expressionManager.setValue(shapeName, Math.max(0, Math.min(1, value)));
-        //             console.log(`Setting VRM expression: ${shapeName} to ${value}`);
-        //         }
-        //
-        //     }
-        //     vrmRef.current.expressionManager.update();
+    console.log('📥 Received blend shapes, scheduling for audio sync...');
+
+    if (!vrmRef.current) return;
+
+    // If audio is not playing, apply immediately (for manual controls)
+    if (!audioStartTimeRef.current) {
+        applyBlendShapesDirectly(blendShapes);
+        return;
+    }
+
+    // Calculate audio playback time
+    const audioCurrentTime = (Date.now() - audioStartTimeRef.current) / 1000;
+
+    // Apply blend shapes immediately since they should sync with current audio
+    applyBlendShapesDirectly(blendShapes);
+
+}, []);
+
+//     function hasActiveViseme(blendShapes) {
+//     return Object.entries(blendShapes).some(([name, val]) =>
+//         name !== 'Fcl_MTH_Neutral' && name.startsWith('Fcl_MTH') && val > 0.01
+//     );
+// }
+
+    // Separate function for direct application
+//     const applyBlendShapesDirectly = useCallback((blendShapes: Record<string, number>) => {
+//         setAudioSyncInfo(prev => ({
+//             ...prev,
+//             audioTime: audioStartTimeRef.current ? (Date.now() - audioStartTimeRef.current) / 1000 : 0,
+//             lastBlendShapeTime: Date.now()
+//         }));
+//         if (!vrmRef.current) return;
+//
+//         if (vrmRef.current.expressionManager) {
+//             console.log('Available VRM expressions:', Object.keys(vrmRef.current.expressionManager.expressionMap || {}));
+//              // RESET ALL EXPRESSIONS FIRST
+//             const allExpressions = Object.keys(vrmRef.current.expressionManager.expressionMap || {});
+//             allExpressions.forEach(expr => {
+//                 vrmRef.current.expressionManager.setValue(expr, 0);
+//             });
+//             // If any non-neutral viseme is active, suppress neutral
+// if (hasActiveViseme(blendShapes)) {
+//     blendShapes['Fcl_MTH_Neutral'] = 0;
+// }
+//
+//
+//             for (const [shapeName, value] of Object.entries(blendShapes)) {
+//                 if (value > 0.001) {
+//                     // Try direct mapping first
+//                     if (vrmRef.current.expressionManager.expressionMap[shapeName]) {
+//                         vrmRef.current.expressionManager.setValue(shapeName, Math.max(0, Math.min(1, value)));
+//                         console.log(`✅ Direct VRM expression: ${shapeName} = ${value}`);
+//                     }
+//                     // Try mapped name
+//                     else if (VRM_EXPRESSION_MAPPING[shapeName]) {
+//                         const mappedName = VRM_EXPRESSION_MAPPING[shapeName];
+//                         if (vrmRef.current.expressionManager.expressionMap[mappedName]) {
+//                             vrmRef.current.expressionManager.setValue(mappedName, Math.max(0, Math.min(1, value)));
+//                             console.log(`✅ Mapped VRM expression: ${shapeName} -> ${mappedName} = ${value}`);
+//                         }
+//                     }
+//                     else {
+//                         console.log(`❌ No VRM expression found for: ${shapeName}`);
+//                     }
+//                 }
+//             }
+//             vrmRef.current.expressionManager.update();
+//         }
+//         else {
+//             // Fallback to direct morph target manipulation
+//             const targetObject = vrmRef.current.scene || vrmRef.current;
+//             let foundMorphTargets = false;
+//
+//             targetObject.traverse((child: any) => {
+//                 if (child.isMesh && child.morphTargetInfluences && child.morphTargetDictionary) {
+//                     foundMorphTargets = true;
+//                     // RESET ALL morph targets to 0
+//                     for (let i = 0; i < child.morphTargetInfluences.length; i++) {
+//                         child.morphTargetInfluences[i] = 0;
+//                     }
+//                     console.log(`🎭 Processing morph targets for mesh: ${child.name}`);
+//
+//                     // Apply new values WITHOUT decay (for immediate sync)
+//                     for (const [shapeName, value] of Object.entries(blendShapes)) {
+//                         const index = child.morphTargetDictionary[shapeName];
+//                         if (index !== undefined && value > 0.001) {
+//                             child.morphTargetInfluences[index] = value; // Direct application
+//                             console.log(`✅ Applied morph: ${shapeName}[${index}] = ${value}`);
+//                         } else if (index === undefined) {
+//                             console.log(`❌ Morph target not found: ${shapeName}`);
+//                         }
+//                     }
+//                 }
+//             });
+//
+//             if (!foundMorphTargets) {
+//                 console.error("❌ No morph targets found in VRM model!");
+//             }
+//         }
+//     }, []);
+
+    const applyBlendShapesDirectly = useCallback((blendShapes: Record<string, number>) => {
+    setAudioSyncInfo(prev => ({
+        ...prev,
+        audioTime: audioStartTimeRef.current ? (Date.now() - audioStartTimeRef.current) / 1000 : 0,
+        lastBlendShapeTime: Date.now()
+    }));
+
+    if (!vrmRef.current) return;
+
+    const hasActiveViseme = (shapes: Record<string, number>): boolean => {
+        return Object.entries(shapes).some(
+            ([name, value]) =>
+                name !== 'Fcl_MTH_Neutral' &&
+                name.startsWith('Fcl_MTH') &&
+                value > 0.01
+        );
+    };
+
+    if (vrmRef.current.expressionManager) {
+        console.log('Available VRM expressions:', Object.keys(vrmRef.current.expressionManager.expressionMap || {}));
+
+        // Reset all expressions
+        // const allExpressions = Object.keys(vrmRef.current.expressionManager.expressionMap || {});
+        // // allExpressions.forEach(expr => {
+        // //     vrmRef.current.expressionManager.setValue(expr, 0);
+        // // });
+        // for (const expr of allExpressions) {
+        //     const prevVal = vrmRef.current.expressionManager.getValue(expr) || 0;
+        //     // Decay slightly over time
+        //     vrmRef.current.expressionManager.setValue(expr, prevVal * 0.8);
         // }
 
+        const visemeExpressions = Object.keys(blendShapes).filter(name =>
+            name.startsWith('Fcl_MTH') || VRM_EXPRESSION_MAPPING[name]?.match(/^(aa|ih|ou|ee|oh|sil|neutral)$/)
+        );
 
-        // Replace the expression manager section with:
-        if (vrmRef.current.expressionManager) {
-            console.log('Available VRM expressions:', Object.keys(vrmRef.current.expressionManager.expressionMap || {}));
+        for (const expr of visemeExpressions) {
+            const actual = VRM_EXPRESSION_MAPPING[expr] || expr;
+            const prev = vrmRef.current.expressionManager.getValue(actual) || 0;
+            vrmRef.current.expressionManager.setValue(actual, prev * 0.8); // smooth decay
+        }
 
-            for (const [shapeName, value] of Object.entries(blendShapes)) {
-                // Try direct mapping first
+
+
+        // Suppress neutral if other visemes are active
+        if (hasActiveViseme(blendShapes)) {
+            blendShapes['Fcl_MTH_Neutral'] = 0;
+            blendShapes['Fcl_ALL_Neutral'] = 0;
+
+        }
+
+        for (const [shapeName, value] of Object.entries(blendShapes)) {
+            if (value > 0.001) {
+                // Direct match
+                // blendShapes['Fcl_MTH_Neutral'] = 0;
                 if (vrmRef.current.expressionManager.expressionMap[shapeName]) {
-                    vrmRef.current.expressionManager.setValue(shapeName, Math.max(0, Math.min(1, value)));
+                    vrmRef.current.expressionManager.setValue(
+                        shapeName,
+                        Math.max(0, Math.min(1, value))
+                    );
                     console.log(`✅ Direct VRM expression: ${shapeName} = ${value}`);
                 }
                 // Try mapped name
                 else if (VRM_EXPRESSION_MAPPING[shapeName]) {
                     const mappedName = VRM_EXPRESSION_MAPPING[shapeName];
                     if (vrmRef.current.expressionManager.expressionMap[mappedName]) {
-                        vrmRef.current.expressionManager.setValue(mappedName, Math.max(0, Math.min(1, value)));
+                        vrmRef.current.expressionManager.setValue(
+                            mappedName,
+                            Math.max(0, Math.min(1, value))
+                        );
                         console.log(`✅ Mapped VRM expression: ${shapeName} -> ${mappedName} = ${value}`);
                     }
-                }
-                else {
+                } else {
                     console.log(`❌ No VRM expression found for: ${shapeName}`);
                 }
             }
-            vrmRef.current.expressionManager.update();
         }
 
-        else {
-            // Fallback to direct morph target manipulation (GLB or VRM without expression manager)
-            const targetObject = vrmRef.current.scene || vrmRef.current;
+        vrmRef.current.expressionManager.update();
+    } else {
+        // Fallback to morph target manipulation
+        const targetObject = vrmRef.current.scene || vrmRef.current;
+        let foundMorphTargets = false;
 
-            targetObject.traverse((child: any) => {
-                if (child.isMesh && child.morphTargetInfluences && child.morphTargetDictionary) {
-                    // Smooth decay
-                    for (let i = 0; i < child.morphTargetInfluences.length; i++) {
-                        child.morphTargetInfluences[i] *= 0.9;
-                    }
-                    console.log('Applying blend shapes to mesh:', child.name);
+        targetObject.traverse((child: any) => {
+            if (child.isMesh && child.morphTargetInfluences && child.morphTargetDictionary) {
+                foundMorphTargets = true;
 
-                    // Apply new values
-                    for (const [shapeName, value] of Object.entries(blendShapes)) {
-                        const index = child.morphTargetDictionary[shapeName];
-                        if (index !== undefined && value > 0.001) {
-                            const currentValue = child.morphTargetInfluences[index] || 0;
-                            child.morphTargetInfluences[index] = currentValue + (value - currentValue) * 0.3;
-                        }
-                        console.log(`Setting morph target: ${shapeName} to ${child.morphTargetInfluences[index]}`);
+                // Reset all morph targets
+                for (let i = 0; i < child.morphTargetInfluences.length; i++) {
+                    child.morphTargetInfluences[i] = 0;
+                }
+
+                console.log(`🎭 Processing morph targets for mesh: ${child.name}`);
+
+                for (const [shapeName, value] of Object.entries(blendShapes)) {
+                    const index = child.morphTargetDictionary[shapeName];
+                    if (index !== undefined && value > 0.001) {
+                        child.morphTargetInfluences[index] = value;
+                        console.log(`✅ Applied morph: ${shapeName}[${index}] = ${value}`);
+                    } else if (index === undefined) {
+                        console.log(`❌ Morph target not found: ${shapeName}`);
                     }
                 }
-            });
+            }
+        });
+
+        if (!foundMorphTargets) {
+            console.error("❌ No morph targets found in VRM model!");
         }
-    }, []);
+    }
+}, []);
+
 
     // Find dominant blend shape for display
     const findDominantBlendShape = useCallback((blendShapes: Record<string, number>): string => {
@@ -734,9 +1046,23 @@ export function EnhancedVRMAvatarChat() {
                                 audio.volume = 1.0;
                                 document.body.appendChild(audio);
                                 audioRef.current = audio;
+                                audioElementRef.current = audio;
                             }
 
                             audioRef.current.srcObject = stream;
+
+                            // CRITICAL: Track when audio actually starts playing
+                            audioRef.current.addEventListener('play', () => {
+                                audioStartTimeRef.current = Date.now();
+                                setAudioSyncInfo(prev => ({ ...prev, audioPlaying: true }));
+                                console.log('🎵 Audio playback started at:', audioStartTimeRef.current);
+                            });
+
+                            audioRef.current.addEventListener('ended', () => {
+                                audioStartTimeRef.current = null;
+                                setAudioSyncInfo(prev => ({ ...prev, audioPlaying: false }));
+                                console.log('🎵 Audio playback ended');
+                            });
 
                             if (outputDeviceIdRef.current && 'setSinkId' in HTMLAudioElement.prototype) {
                                 (audioRef.current as any).setSinkId(outputDeviceIdRef.current)
@@ -1004,6 +1330,12 @@ export function EnhancedVRMAvatarChat() {
                         </div>
                         <div className="text-xs text-gray-400 mt-1 text-center">
                             {isRecording ? `Audio Level: ${Math.round(audioLevel * 100)}%` : 'Audio Level Monitor'}
+                        </div>
+
+                        <div className="text-xs text-white">
+                            <div>Audio: {audioSyncInfo.audioPlaying ? 'Playing' : 'Stopped'}</div>
+                            <div>Audio Time: {audioSyncInfo.audioTime.toFixed(2)}s</div>
+                            <div>Last Blend: {((Date.now() - audioSyncInfo.lastBlendShapeTime) / 1000).toFixed(2)}s ago</div>
                         </div>
                     </div>
 

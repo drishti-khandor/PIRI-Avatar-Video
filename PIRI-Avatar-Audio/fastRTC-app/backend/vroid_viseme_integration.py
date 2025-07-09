@@ -234,84 +234,112 @@ class EnhancedVRoidVisemeController:
     #
     #     logger.info("✅ Animation playback completed")
 
+    # async def _play_animation_sequence(self, frames: List):
+    #     """Enhanced debug version of animation playback"""
+    #     if not frames:
+    #         logger.warning("❌ No frames provided to _play_animation_sequence")
+    #         return
+    #
+    #     logger.info(f"🎬 Starting animation playback with {len(frames)} frames")
+    #
+    #     # Debug: Log first few frames to check structure
+    #     for i, frame in enumerate(frames[:3]):
+    #         logger.info(f"🎭 Frame {i}: timestamp={getattr(frame, 'timestamp', 'MISSING')}, "
+    #                     f"blend_shapes_count={len(getattr(frame, 'blend_shapes', {}))}")
+    #         if hasattr(frame, 'blend_shapes'):
+    #             logger.info(f"    Blend shapes sample: {dict(list(frame.blend_shapes.items())[:3])}")
+    #
+    #     # Debug: Check WebSocket connections
+    #     logger.info(f"📡 Active WebSocket connections: {len(self.active_connections)}")
+    #     if not self.active_connections:
+    #         logger.error("❌ No active WebSocket connections - lip sync will not work!")
+    #         return
+    #
+    #     start_time = time.time()
+    #     frames_sent = 0
+    #     errors = 0
+    #
+    #     for i, frame in enumerate(frames):
+    #         try:
+    #             # Debug: Check frame structure
+    #             if not hasattr(frame, 'timestamp'):
+    #                 logger.error(f"❌ Frame {i} missing timestamp attribute")
+    #                 continue
+    #
+    #             if not hasattr(frame, 'blend_shapes'):
+    #                 logger.error(f"❌ Frame {i} missing blend_shapes attribute")
+    #                 continue
+    #
+    #             # Calculate timing
+    #             target_time = start_time + frame.timestamp
+    #             current_time = time.time()
+    #             wait_time = target_time - current_time
+    #
+    #             # Debug: Log timing for first few frames
+    #             if i < 5:
+    #                 logger.info(f"⏱️ Frame {i}: target={target_time:.3f}, current={current_time:.3f}, "
+    #                             f"wait={wait_time:.3f}s")
+    #
+    #             # Wait until it's time for this frame (but don't wait too long)
+    #             if wait_time > 0 and wait_time < 1.0:  # Cap wait time to 1 second
+    #                 await asyncio.sleep(wait_time)
+    #             elif wait_time >= 1.0:
+    #                 logger.warning(f"⚠️ Frame {i} wait time too long: {wait_time:.3f}s, skipping wait")
+    #
+    #             # Send the frame with debug info
+    #             logger.debug(f"📤 Sending frame {i} with {len(frame.blend_shapes)} blend shapes")
+    #
+    #             # Debug: Log significant blend shapes
+    #             significant_shapes = {k: v for k, v in frame.blend_shapes.items() if v > 0.1}
+    #             if significant_shapes:
+    #                 logger.info(f"🎭 Frame {i} significant shapes: {significant_shapes}")
+    #
+    #             await self._broadcast_blend_shapes(frame.blend_shapes)
+    #             frames_sent += 1
+    #
+    #         except Exception as e:
+    #             errors += 1
+    #             logger.error(f"❌ Error processing frame {i}: {e}")
+    #
+    #         # Emergency brake - if too many errors, stop
+    #         if errors > 10:
+    #             logger.error("❌ Too many errors, stopping animation playback")
+    #             break
+    #
+    #     logger.info(f"✅ Animation playback completed: {frames_sent}/{len(frames)} frames sent, {errors} errors")
+    #
+    #     # Final debug check
+    #     if frames_sent == 0:
+    #         logger.error("❌ NO FRAMES WERE SENT - This is why lip sync isn't working!")
+    #         logger.error("🔍 Check: 1) Frame structure, 2) WebSocket connections, 3) Timing logic")
+
     async def _play_animation_sequence(self, frames: List):
-        """Enhanced debug version of animation playback"""
+        """Simplified animation playback for real-time sync"""
         if not frames:
             logger.warning("❌ No frames provided to _play_animation_sequence")
             return
 
-        logger.info(f"🎬 Starting animation playback with {len(frames)} frames")
+        logger.info(f"🎬 Starting REAL-TIME animation playback with {len(frames)} frames")
 
-        # Debug: Log first few frames to check structure
-        for i, frame in enumerate(frames[:3]):
-            logger.info(f"🎭 Frame {i}: timestamp={getattr(frame, 'timestamp', 'MISSING')}, "
-                        f"blend_shapes_count={len(getattr(frame, 'blend_shapes', {}))}")
-            if hasattr(frame, 'blend_shapes'):
-                logger.info(f"    Blend shapes sample: {dict(list(frame.blend_shapes.items())[:3])}")
-
-        # Debug: Check WebSocket connections
-        logger.info(f"📡 Active WebSocket connections: {len(self.active_connections)}")
-        if not self.active_connections:
-            logger.error("❌ No active WebSocket connections - lip sync will not work!")
-            return
-
-        start_time = time.time()
-        frames_sent = 0
-        errors = 0
+        # Instead of complex timing, just send frames at regular intervals
+        frame_interval = 1.0 / 20  # 20 FPS
 
         for i, frame in enumerate(frames):
             try:
-                # Debug: Check frame structure
-                if not hasattr(frame, 'timestamp'):
-                    logger.error(f"❌ Frame {i} missing timestamp attribute")
-                    continue
-
                 if not hasattr(frame, 'blend_shapes'):
-                    logger.error(f"❌ Frame {i} missing blend_shapes attribute")
                     continue
 
-                # Calculate timing
-                target_time = start_time + frame.timestamp
-                current_time = time.time()
-                wait_time = target_time - current_time
-
-                # Debug: Log timing for first few frames
-                if i < 5:
-                    logger.info(f"⏱️ Frame {i}: target={target_time:.3f}, current={current_time:.3f}, "
-                                f"wait={wait_time:.3f}s")
-
-                # Wait until it's time for this frame (but don't wait too long)
-                if wait_time > 0 and wait_time < 1.0:  # Cap wait time to 1 second
-                    await asyncio.sleep(wait_time)
-                elif wait_time >= 1.0:
-                    logger.warning(f"⚠️ Frame {i} wait time too long: {wait_time:.3f}s, skipping wait")
-
-                # Send the frame with debug info
-                logger.debug(f"📤 Sending frame {i} with {len(frame.blend_shapes)} blend shapes")
-
-                # Debug: Log significant blend shapes
-                significant_shapes = {k: v for k, v in frame.blend_shapes.items() if v > 0.1}
-                if significant_shapes:
-                    logger.info(f"🎭 Frame {i} significant shapes: {significant_shapes}")
-
+                # Send frame immediately
                 await self._broadcast_blend_shapes(frame.blend_shapes)
-                frames_sent += 1
+
+                # Small delay to prevent overwhelming
+                if i < len(frames) - 1:  # Don't delay after last frame
+                    await asyncio.sleep(frame_interval)
 
             except Exception as e:
-                errors += 1
                 logger.error(f"❌ Error processing frame {i}: {e}")
 
-            # Emergency brake - if too many errors, stop
-            if errors > 10:
-                logger.error("❌ Too many errors, stopping animation playback")
-                break
-
-        logger.info(f"✅ Animation playback completed: {frames_sent}/{len(frames)} frames sent, {errors} errors")
-
-        # Final debug check
-        if frames_sent == 0:
-            logger.error("❌ NO FRAMES WERE SENT - This is why lip sync isn't working!")
-            logger.error("🔍 Check: 1) Frame structure, 2) WebSocket connections, 3) Timing logic")
+        logger.info("✅ Real-time animation playback completed")
 
     async def _broadcast_blend_shapes(self, blend_shapes: Dict[str, float]):
         """Enhanced debug version of blend shape broadcasting"""
@@ -390,14 +418,45 @@ class EnhancedVRoidVisemeController:
         await self._broadcast_blend_shapes(weights)
         logger.debug(f"🎯 Updated to single viseme: {phoneme} with emotion: {emotion}")
 
+    # async def set_emotion(self, emotion: str):
+    #     """Set the current emotional context"""
+    #     if emotion in ['neutral', 'happy', 'sad', 'surprised', 'angry']:
+    #         self.current_emotion = emotion
+    #         # Update current viseme with new emotion
+    #         if hasattr(self, '_last_phoneme'):
+    #             await self.update_single_viseme(self._last_phoneme, emotion)
+    #         logger.info(f"😊 Emotion set to: {emotion}")
+    #     else:
+    #         logger.warning(f"Unknown emotion: {emotion}")
+
     async def set_emotion(self, emotion: str):
-        """Set the current emotional context"""
+        """Set the current emotional context and apply it immediately"""
         if emotion in ['neutral', 'happy', 'sad', 'surprised', 'angry']:
             self.current_emotion = emotion
-            # Update current viseme with new emotion
-            if hasattr(self, '_last_phoneme'):
-                await self.update_single_viseme(self._last_phoneme, emotion)
-            logger.info(f"😊 Emotion set to: {emotion}")
+
+            # Get current mouth state (or default to neutral)
+            current_phoneme = getattr(self, '_last_phoneme', 'sil')
+
+            # Get blend shapes with the new emotion
+            emotional_weights = self.viseme_mapper.get_instantaneous_viseme_weights(
+                current_phoneme,
+                emotion
+            )
+
+            # Apply emotional modifiers more strongly
+            if emotion != 'neutral' and emotion in self.viseme_mapper.expression_modifiers:
+                emotion_weights = self.viseme_mapper.expression_modifiers[emotion]
+                for shape_name, weight in emotion_weights.items():
+                    # Increase emotional weight for more visible effect
+                    emotional_weights[shape_name] = min(1.0, emotional_weights.get(shape_name, 0) + weight * 1.5)
+
+            # Broadcast the emotional state immediately
+            await self._broadcast_blend_shapes(emotional_weights)
+
+            # Store last phoneme for future updates
+            self._last_phoneme = current_phoneme
+
+            logger.info(f"😊 Emotion set to: {emotion} with blend shapes: {emotional_weights}")
         else:
             logger.warning(f"Unknown emotion: {emotion}")
 
