@@ -5,6 +5,7 @@ Replace the existing VisemeController in unified_server.py with this enhanced ve
 """
 
 import asyncio
+from hmac import new
 import json
 import os
 import time
@@ -18,6 +19,9 @@ from fastapi import WebSocket
 import numpy as np
 from fastrtc import AdditionalOutputs, get_stt_model, get_tts_model
 from openai import AzureOpenAI
+import io
+import soundfile as sf
+import base64
 
 
 # Import the simplified VRoid viseme mapper
@@ -425,56 +429,85 @@ async def enhanced_process_audio_and_respond(audio, enhanced_viseme_controller: 
     sample_rate = tts_data[0][0]
     audio_chunks = [chunk for _, chunk in tts_data]
     
-    # Combine all audio chunks
-    if audio_chunks:
-        full_audio = np.concatenate(audio_chunks)
-        
-        # Extract visemes using ForceAlign from the complete audio
+    all_visemes = []
+    for i, chunk in enumerate(audio_chunks):
         try:
+            # Convert audio chunk to bytes
+            audio_bytes = io.BytesIO()
+            sf.write(audio_bytes, chunk, sample_rate, format='WAV')
+            audio_bytes.seek(0)
+            
+            # Encode audio to base64
+            b64 = base64.b64encode(audio_bytes.read()).decode('utf-8')
+            
+            new_visemes = []
             if viseme_extractor:
-                visemes = await viseme_extractor.extract_visemes(full_audio, sample_rate, full_response)
-                logger.info(f"Extracted {len(visemes)} visemes using ForceAlign")
+                # Extract visemes for this chunk
+                new_visemes = await viseme_extractor.extract_visemes(chunk, sample_rate, full_response)
+                logger.info(f"Extracted {len(new_visemes)} visemes for chunk {i+1}/{len(audio_chunks)}")
             else:
-                logger.warning("No viseme extractor available")
-                visemes = []
-        except Exception as e:
-            logger.error(f"Failed to extract visemes: {e}")
-            visemes = []
-        
-        # Format visemes for frontend
-        enhanced_visemes = []
-        for viseme in visemes:
-            enhanced_viseme = {
-                "viseme": str(viseme.viseme),
-                "start_time": float(viseme.start_time),
-                "end_time": float(viseme.end_time),
-                "confidence": float(viseme.confidence)
+                logger.warning("No viseme extractor available, skipping viseme extraction")
+                new_visemes = []
+            
+            all_visemes.extend(new_visemes)
+            chunk_data = {
+                "type": "tts_chunk",
+                "audio": b64,
+                "visemes": new_visemes,
+                "text": full_response,
             }
-            enhanced_visemes.append(enhanced_viseme)
-            logger.info(
-                f"🎵 TTS_VISEME: viseme={enhanced_viseme['viseme']}, time={enhanced_viseme['start_time']:.3f}-{enhanced_viseme['end_time']:.3f}")
+            
+            # Send each audio chunk to frontend
+            yield AdditionalOutputs(chunk_data)
+            logger.info(f"Sent TTS audio chunk {i+1}/{len(audio_chunks)}")
+        except Exception as e:
+            logger.error(f"Failed to process TTS audio chunk {i}: {e}")
+            continue
+    
+    # Combine all audio chunks
+    # if audio_chunks:
+    #     full_audio = np.concatenate(audio_chunks)
         
-        # Prepare audio chunks for frontend
-        audio_chunks_for_frontend = []
-        for chunk in audio_chunks:
-            audio_chunks_for_frontend.append((sample_rate, chunk.tolist()))
+    #     # Extract visemes using ForceAlign from the complete audio
+    #     try:
+    #         if viseme_extractor:
+    #             visemes = await viseme_extractor.extract_visemes(full_audio, sample_rate, full_response)
+    #             logger.info(f"Extracted {len(visemes)} visemes using ForceAlign")
+    #         else:
+    #             logger.warning("No viseme extractor available")
+    #             visemes = []
+    #     except Exception as e:
+    #         logger.error(f"Failed to extract visemes: {e}")
+    #         visemes = []
         
-        # Buffer for output data
-        response_data = {
-            "type": "tts_response",
-            "text": full_response,
-            "audio_chunks": audio_chunks_for_frontend,
-            "visemes": enhanced_visemes
-        }
+    #     # Format visemes for frontend
+    #     enhanced_visemes = []
+    #     for viseme in visemes:
+    #         enhanced_viseme = {
+    #             "viseme": str(viseme.viseme),
+    #             "start_time": float(viseme.start_time),
+    #             "end_time": float(viseme.end_time),
+    #             "confidence": float(viseme.confidence)
+    #         }
+    #         enhanced_visemes.append(enhanced_viseme)
+    #         logger.info(
+    #             f"🎵 TTS_VISEME: viseme={enhanced_viseme['viseme']}, time={enhanced_viseme['start_time']:.3f}-{enhanced_viseme['end_time']:.3f}")
+    #     # Buffer for output data
+    #     response_data = {
+    #         "type": "tts_response",
+    #         "text": full_response,
+    #         "audio": b64,
+    #         "visemes": enhanced_visemes
+    #     }
         
-        # Send all data to frontend at once
-        yield AdditionalOutputs(response_data)
-        logger.info("Delivered TTS response and visemes in one batch.")
+    #     # Send all data to frontend at once
+    #     yield AdditionalOutputs(response_data)
+    #     logger.info("Delivered TTS response and visemes in one batch.")
         
-        all_visemes = enhanced_visemes
-    else:
-        logger.warning("No audio chunks generated")
-        all_visemes = []
+    #     all_visemes = enhanced_visemes
+    # else:
+    #     logger.warning("No audio chunks generated")
+    #     all_visemes = []
     
     # Process avatar visemes in background
     try:
