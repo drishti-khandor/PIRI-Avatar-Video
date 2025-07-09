@@ -88,7 +88,7 @@ class ForceAlignVisemeExtractor:
         
         logger.info("ForceAlign viseme extractor initialized")
     
-    def extract_visemes_async(self, audio_data: np.ndarray, sample_rate: int, transcript: str) -> List[VisemeData]:
+    async def extract_visemes(self, audio_data: np.ndarray, sample_rate: int, transcript: str) -> List[VisemeData]:
         """
         Extract visemes from audio data using ForceAlign for phoneme alignment.
         
@@ -100,7 +100,13 @@ class ForceAlignVisemeExtractor:
         Returns:
             List of VisemeData objects with timing information
         """
-        return asyncio.run(self.extract_visemes_sync(audio_data, sample_rate, transcript))
+        return await asyncio.to_thread(
+                self.extract_visemes_sync,
+                audio_data,
+                sample_rate,
+                transcript
+            )
+
     
     def extract_visemes_sync(self, audio_data: np.ndarray, sample_rate: int, transcript: str) -> List[VisemeData]:
         """
@@ -125,39 +131,35 @@ class ForceAlignVisemeExtractor:
             
             try:
                 # Perform forced alignment
-                logger.info(f"Performing forced alignment for text: '{transcript}'")
                 align = ForceAlign(temp_audio_path, transcript)
                 
                 words = align.inference()
-                
-                logger.info(f"Alignment completed. Transcript: '{words}'")
-                
-                
-                
-                
+                phoneme_alignments = align.phoneme_alignments
+                logger.info(f"Phoneme alignments: {phoneme_alignments} ({len(phoneme_alignments)} total)")
                     # Process alignment results
-                for word_info in words:
-                        for phone_info in word_info.phonemes:
-                            logger.info(f"Processing phoneme: {phone_info.phoneme} ({phone_info.time_start:.3f}s - {phone_info.time_end:.3f}s)")
-                            phoneme = phone_info.get('phoneme', '')
-                            start_time = phone_info.get('time_start', 0.0)
-                            end_time = phone_info.get('time_end', 0.0)
-                            
-                            # Convert phoneme to viseme ID and then to string
-                            viseme_id = self.phoneme_to_viseme_id.get(phoneme, 0)
-                            viseme = self.viseme_id_to_string.get(viseme_id, 'sil')
-                            
-                            # Create viseme data
-                            viseme_data = VisemeData(
-                                viseme=viseme,
-                                start_time=start_time,
-                                end_time=end_time,
-                                confidence=1.0,
-                                phoneme=phoneme
-                            )
-                            visemes.append(viseme_data)
-                            
-                            logger.debug(f"Phoneme: {phoneme} -> Viseme: {viseme} ({start_time:.3f}s - {end_time:.3f}s)")
+                for phoneme_alignment in phoneme_alignments:
+                    raw_phoneme = phoneme_alignment.phoneme
+                    # remove any digits or special characters
+                    raw_phoneme = ''.join(filter(str.isalpha, raw_phoneme))
+                    phoneme = raw_phoneme.lower() if raw_phoneme else 'sil'
+                    start_time = phoneme_alignment.time_start
+                    end_time = phoneme_alignment.time_end
+                    
+                    # Convert phoneme to viseme ID and then to string
+                    viseme_id = self.phoneme_to_viseme_id.get(phoneme, 0)
+                    viseme = self.viseme_id_to_string.get(viseme_id, 'sil')
+                    
+                    # Create viseme data
+                    viseme_data = VisemeData(
+                        viseme=viseme,
+                        start_time=start_time,
+                        end_time=end_time,
+                        confidence=1.0,
+                        phoneme=phoneme
+                    )
+                    visemes.append(viseme_data)
+                    
+                    logger.info(f"Phoneme: {phoneme} -> Viseme: {viseme} ({start_time:.3f}s - {end_time:.3f}s)")
                 
                 else:
                     logger.warning("No alignment results received from ForceAlign")

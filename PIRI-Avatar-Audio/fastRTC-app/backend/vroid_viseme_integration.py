@@ -367,7 +367,7 @@ class EnhancedVRoidVisemeController:
 
 
 # Function to replace the existing process_audio_and_respond function
-def enhanced_process_audio_and_respond(audio, enhanced_viseme_controller: EnhancedVRoidVisemeController):
+async def enhanced_process_audio_and_respond(audio, enhanced_viseme_controller: EnhancedVRoidVisemeController):
     """
     Enhanced audio processing function with advanced VRoid viseme integration
     Replace the existing process_audio_and_respond function with this
@@ -416,9 +416,14 @@ def enhanced_process_audio_and_respond(audio, enhanced_viseme_controller: Enhanc
     audio_chunks = []
     sample_rate = None
     
-    for sr, audio_chunk in tts_model.stream_tts_sync(full_response):
-        sample_rate = sr
-        audio_chunks.append(audio_chunk)
+    tts_data = await asyncio.get_running_loop().run_in_executor(
+        None,
+        lambda: list(tts_model.stream_tts_sync(full_response))
+    )
+
+    
+    sample_rate = tts_data[0][0]
+    audio_chunks = [chunk for _, chunk in tts_data]
     
     # Combine all audio chunks
     if audio_chunks:
@@ -427,7 +432,7 @@ def enhanced_process_audio_and_respond(audio, enhanced_viseme_controller: Enhanc
         # Extract visemes using ForceAlign from the complete audio
         try:
             if viseme_extractor:
-                visemes = viseme_extractor.extract_visemes_async(full_audio, sample_rate, full_response)
+                visemes = await viseme_extractor.extract_visemes(full_audio, sample_rate, full_response)
                 logger.info(f"Extracted {len(visemes)} visemes using ForceAlign")
             else:
                 logger.warning("No viseme extractor available")

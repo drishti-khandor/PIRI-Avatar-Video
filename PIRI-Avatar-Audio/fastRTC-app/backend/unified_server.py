@@ -111,9 +111,10 @@ except Exception as e:
     logger.error(f"Failed to initialize ForceAlign viseme extractor: {e}")
     viseme_extractor = None
 
-def process_audio_and_respond(audio):
+async def process_audio_and_respond(audio):
     """Enhanced audio processing with advanced VRoid visemes"""
-    return enhanced_process_audio_and_respond(audio, enhanced_viseme_controller)
+    async for output in enhanced_process_audio_and_respond(audio, enhanced_viseme_controller):
+        yield output
 
 # Initialize FastRTC stream
 stream = Stream(ReplyOnPause(

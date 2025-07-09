@@ -141,6 +141,8 @@ class VRoidVisemeMapper:
         # Get weights for the viseme, default to silence if not found
         weights = self.viseme_to_blend_shapes.get(viseme, {}).copy()
         
+        logger.info(f"Getting weights for viseme '{viseme}': {weights}")
+        
         # For silence, clamp all possible blend shapes to ≤ 0.01
         if viseme == 'sil' or not weights:
             all_possible_shapes = [
