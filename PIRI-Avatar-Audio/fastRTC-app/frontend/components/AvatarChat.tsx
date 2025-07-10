@@ -5,16 +5,20 @@ import { motion, AnimatePresence } from "framer-motion";
 import { WebRTCService } from "@/src/services/webrtc.service";
 import { WebSocketService } from "@/src/services/websocket.service";
 import { AudioSyncService } from "@/src/services/audio-sync.service";
-import { visemeToBlendShapes } from "@/src/utils/viseme-mapping";
+import { SSEService } from "@/src/services/sse.service";
 import {
-  AvatarState,
+  visemeToBlendShapes,
+  interpolateBlendShapes,
+} from "@/src/utils/viseme-mapping";
+import { useAvatarRenderer } from "@/src/hooks/useAvatarRenderer";
+import {
+  AvatarStateType,
   BlendShapeValues,
-  EmotionState,
+  EmotionType,
 } from "@/src/types/avatar.types";
-import {
-  ChatMessage,
-  WebSocketMessage,
-} from "@/src/types/communication.types";
+import { ChatMessage, WebSocketMessage } from "@/src/types/communication.types";
+
+interface AvatarChatProps {
   className?: string;
 }
 
@@ -23,11 +27,14 @@ export default function AvatarChat({ className = "" }: AvatarChatProps) {
   const [isWebRTCConnected, setIsWebRTCConnected] = useState(false);
   const [isWebSocketConnected, setIsWebSocketConnected] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
 
   // Avatar states
-  const [avatarState, setAvatarState] = useState<AvatarState>("idle");
-  const [currentEmotion, setCurrentEmotion] = useState<EmotionState>("neutral");
-  const [blendShapes, setBlendShapes] = useState<BlendShapeValues>({});
+  const [avatarState, setAvatarState] = useState<AvatarStateType>("idle");
+  const [currentEmotion, setCurrentEmotion] = useState<EmotionType>(
+    EmotionType.NEUTRAL
+  );
+  const [, setBlendShapes] = useState<BlendShapeValues>({});
   const [audioLevel, setAudioLevel] = useState(0);
 
   // Chat messages
@@ -36,11 +43,88 @@ export default function AvatarChat({ className = "" }: AvatarChatProps) {
   // Refs
   const webrtcRef = useRef<WebRTCService | null>(null);
   const websocketRef = useRef<WebSocketService | null>(null);
-  const audioRef = useRef<HTMLAudioElement>(null);
   const audioSyncRef = useRef<AudioSyncService | null>(null);
+  const sseRef = useRef<SSEService | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const chatBottomRef = useRef<HTMLDivElement>(null);
-  const visemeQueueRef = useRef<any[]>([]);
+  const currentBlendShapesRef = useRef<BlendShapeValues>({});
+  const targetBlendShapesRef = useRef<BlendShapeValues>({});
+  const animationFrameRef = useRef<number | null>(null);
+
+  // Initialize avatar renderer
+  const { applyBlendShapes: applyBlendShapesToAvatar, vrmLoaded } =
+    useAvatarRenderer({
+      canvasRef,
+      modelPath: "/models/4thjuly.vrm",
+    });
+
+  // Smooth blend shape interpolation
+  const updateBlendShapeAnimation = useCallback(() => {
+    const currentShapes = currentBlendShapesRef.current;
+    const targetShapes = targetBlendShapesRef.current;
+
+    // Interpolate between current and target
+    const interpolatedShapes = interpolateBlendShapes(
+      currentShapes,
+      targetShapes,
+      0.3
+    );
+
+    // Apply to avatar
+    applyBlendShapesToAvatar(interpolatedShapes);
+    setBlendShapes(interpolatedShapes);
+
+    // Update current shapes
+    currentBlendShapesRef.current = interpolatedShapes;
+
+    // Continue animation
+    animationFrameRef.current = requestAnimationFrame(
+      updateBlendShapeAnimation
+    );
+  }, [applyBlendShapesToAvatar]);
+
+  // Initialize audio sync service
+  useEffect(() => {
+    const audioSync = new AudioSyncService({
+      onVisemeUpdate: (viseme: string, weight: number) => {
+        // Convert viseme to blend shapes
+        const visemeShapes = visemeToBlendShapes(viseme, weight);
+
+        console.log(`Viseme update: ${viseme}`, visemeShapes);
+
+        // Update target blend shapes
+        targetBlendShapesRef.current = {
+          ...targetBlendShapesRef.current,
+          ...visemeShapes,
+        };
+      },
+      onAudioStart: () => {
+        setIsSpeaking(true);
+        setAvatarState("speaking");
+      },
+      onAudioEnd: () => {
+        setIsSpeaking(false);
+        setAvatarState("idle");
+        // Reset to neutral expression
+        targetBlendShapesRef.current = {};
+      },
+      bufferTime: 50, // Reduced buffer for lower latency
+    });
+
+    audioSyncRef.current = audioSync;
+
+    // Start blend shape animation loop
+    animationFrameRef.current = requestAnimationFrame(
+      updateBlendShapeAnimation
+    );
+
+    return () => {
+      audioSync.destroy();
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+    };
+  }, [updateBlendShapeAnimation]);
 
   // Initialize WebSocket connection
   useEffect(() => {
@@ -52,11 +136,33 @@ export default function AvatarChat({ className = "" }: AvatarChatProps) {
 
     ws.on("viseme_update", (data: WebSocketMessage) => {
       if (data.blend_shapes) {
-        setBlendShapes(data.blend_shapes);
-        applyBlendShapesToAvatar(data.blend_shapes);
+        // Update target blend shapes for smooth interpolation
+        targetBlendShapesRef.current = {
+          ...targetBlendShapesRef.current,
+          ...data.blend_shapes,
+        };
       }
       if (data.emotion) {
-        setCurrentEmotion(data.emotion as EmotionState);
+        setCurrentEmotion(data.emotion as EmotionType);
+      }
+    });
+
+    ws.on("audio_chunk", async (data) => {
+      if (data.audio && data.visemes && audioSyncRef.current) {
+        // Convert base64 audio to ArrayBuffer
+        const audioData = Uint8Array.from(atob(data.audio), (c) =>
+          c.charCodeAt(0)
+        ).buffer;
+
+        // Queue audio with synchronized visemes
+        await audioSyncRef.current.queueAudio(audioData, data.visemes);
+      }
+    });
+
+    ws.on("message", (data) => {
+      // Type guard to ensure it's a ChatMessage
+      if ("text" in data && "type" in data) {
+        setMessages((prev) => [...prev, data as ChatMessage]);
       }
     });
 
@@ -75,32 +181,101 @@ export default function AvatarChat({ className = "" }: AvatarChatProps) {
         onConnected: () => {
           setIsWebRTCConnected(true);
           setIsRecording(true);
+          setAvatarState("listening");
         },
         onDisconnected: () => {
           setIsWebRTCConnected(false);
           setIsRecording(false);
+          setAvatarState("idle");
+          // Disconnect SSE when WebRTC disconnects
+          if (sseRef.current) {
+            sseRef.current.disconnect();
+            sseRef.current = null;
+          }
         },
         onMessage: (message: ChatMessage) => {
-          setMessages((prev) => [...prev, message]);
+          // Messages now come through SSE, not data channel
+          console.log("Data channel message (legacy):", message);
         },
-        onAudioStream: (stream: MediaStream) => {
-          if (audioRef.current) {
-            audioRef.current.srcObject = stream;
-            audioRef.current.play().catch(console.error);
-          }
+        onAudioStream: (_stream: MediaStream) => {
+          // We don't use the raw audio element anymore
+          // Audio is handled by AudioSyncService for better sync
         },
         onAudioLevel: (level: number) => {
           setAudioLevel(level);
+
+          // Subtle mouth movement when speaking
+          if (isRecording && level > 0.1) {
+            targetBlendShapesRef.current = {
+              ...targetBlendShapesRef.current,
+              "vrc.v_aa": level * 0.3, // Subtle mouth opening based on audio level
+            };
+          }
         },
       });
 
       await webrtc.connect();
+
+      // Set up SSE connection for receiving updates
+      const sessionId = webrtc.getSessionId();
+      const sse = new SSEService();
+
+      // Handle STT results
+      sse.on("stt", (data) => {
+        const message: ChatMessage = {
+          type: "stt",
+          text: data.text || "",
+          timestamp: data.timestamp,
+        };
+        setMessages((prev) => [...prev, message]);
+      });
+
+      // Handle TTS responses with audio and visemes
+      sse.on("tts_response", async (data) => {
+        // Add AI message to chat
+        const message: ChatMessage = {
+          type: "llm",
+          text: data.text || "",
+          timestamp: data.timestamp,
+        };
+        setMessages((prev) => [...prev, message]);
+
+        // Update emotion
+        if (data.emotion) {
+          setCurrentEmotion(data.emotion as EmotionType);
+        }
+
+        // Handle audio and visemes
+        if (data.audio_b64 && data.visemes && audioSyncRef.current) {
+          try {
+            // Convert base64 to ArrayBuffer
+            const audioData = Uint8Array.from(atob(data.audio_b64), (c) =>
+              c.charCodeAt(0)
+            ).buffer;
+
+            // Queue audio with synchronized visemes
+            await audioSyncRef.current.queueAudio(audioData, data.visemes);
+          } catch (error) {
+            console.error("Error processing TTS response:", error);
+          }
+        }
+      });
+
+      // Handle errors
+      sse.on("error", (data) => {
+        console.error("SSE error:", data.message);
+      });
+
+      // Connect SSE
+      sse.connect(sessionId);
+      sseRef.current = sse;
+
       webrtcRef.current = webrtc;
     } catch (error) {
       console.error("Failed to start WebRTC:", error);
       setIsWebRTCConnected(false);
     }
-  }, []);
+  }, [isRecording]);
 
   // Stop WebRTC connection
   const stopWebRTC = useCallback(() => {
@@ -109,23 +284,41 @@ export default function AvatarChat({ className = "" }: AvatarChatProps) {
       webrtcRef.current = null;
     }
     setIsRecording(false);
+    setAvatarState("idle");
+    targetBlendShapesRef.current = {};
   }, []);
+
+  // Toggle recording
+  const toggleRecording = useCallback(() => {
+    if (isRecording) {
+      stopWebRTC();
+    } else {
+      startWebRTC();
+    }
+  }, [isRecording, startWebRTC, stopWebRTC]);
 
   // Auto-scroll chat
   useEffect(() => {
     chatBottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Initialize avatar renderer
-  const { applyBlendShapes: applyBlendShapesToAvatar } = useAvatarRenderer({
-    canvasRef,
-    modelPath: "/models/4thjuly.vrm", // Update this path to your avatar model
-  });
+  // Keyboard shortcut for recording (spacebar)
+  useEffect(() => {
+    const handleKeyPress = (e: KeyboardEvent) => {
+      if (e.code === "Space" && !e.repeat && e.target === document.body) {
+        e.preventDefault();
+        toggleRecording();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyPress);
+    return () => window.removeEventListener("keydown", handleKeyPress);
+  }, [toggleRecording]);
 
   return (
     <div className={`flex h-full w-full ${className}`}>
       {/* Avatar View */}
-      <div className="flex-1 relative bg-black">
+      <div className="flex-1 relative bg-gradient-to-br from-gray-900 to-black">
         <canvas
           ref={canvasRef}
           className="w-full h-full"
@@ -136,28 +329,78 @@ export default function AvatarChat({ className = "" }: AvatarChatProps) {
         <div className="absolute top-4 left-4 space-y-2">
           <StatusIndicator label="WebSocket" connected={isWebSocketConnected} />
           <StatusIndicator label="WebRTC" connected={isWebRTCConnected} />
+          <StatusIndicator label="Avatar" connected={vrmLoaded} />
         </div>
 
-        {/* Audio Level Indicator */}
-        <div className="absolute bottom-4 left-4 right-4">
+        {/* Avatar State */}
+        <div className="absolute top-4 right-4 bg-black/50 backdrop-blur-sm rounded-lg p-3">
+          <div className="text-xs text-gray-400 mb-1">Avatar State</div>
+          <div className="text-sm text-white font-medium capitalize">
+            {avatarState}
+          </div>
+          {isSpeaking && (
+            <div className="flex items-center gap-2 mt-2">
+              <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
+              <span className="text-xs text-green-400">Speaking</span>
+            </div>
+          )}
+        </div>
+
+        {/* Audio Level Visualization */}
+        <div className="absolute bottom-32 left-4 right-4">
           <div className="bg-gray-800 rounded-full h-2 overflow-hidden">
             <motion.div
-              className="bg-green-500 h-full"
+              className="bg-gradient-to-r from-blue-500 to-green-500 h-full"
               animate={{ width: `${audioLevel * 100}%` }}
-              transition={{ duration: 0.1 }}
+              transition={{ duration: 0.05 }}
             />
           </div>
+          {isRecording && (
+            <div className="text-xs text-gray-400 mt-1 text-center">
+              Listening... (Press spacebar or click mic to stop)
+            </div>
+          )}
         </div>
 
-        {/* Hidden Audio Element */}
-        <audio ref={audioRef} className="hidden" autoPlay />
+        {/* Prominent Recording Toggle Button */}
+        <button
+          onClick={toggleRecording}
+          className={`absolute bottom-8 left-1/2 transform -translate-x-1/2 w-20 h-20 rounded-full flex items-center justify-center transition-all duration-300 ${
+            isRecording
+              ? "bg-red-500 hover:bg-red-600 scale-110 animate-pulse shadow-lg shadow-red-500/50"
+              : "bg-blue-500 hover:bg-blue-600 hover:scale-105 shadow-lg shadow-blue-500/50"
+          }`}
+        >
+          <svg
+            className="w-10 h-10 text-white"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            {isRecording ? (
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
+            ) : (
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
+              />
+            )}
+          </svg>
+        </button>
       </div>
 
       {/* Chat Panel */}
       <div className="w-96 bg-gray-900 flex flex-col">
         {/* Chat Header */}
         <div className="p-4 border-b border-gray-800">
-          <h2 className="text-white font-semibold">Chat</h2>
+          <h2 className="text-white font-semibold">Conversation</h2>
           <div className="text-sm text-gray-400 mt-1">
             Emotion: {currentEmotion}
           </div>
@@ -188,18 +431,32 @@ export default function AvatarChat({ className = "" }: AvatarChatProps) {
           <div ref={chatBottomRef} />
         </div>
 
+        {/* Audio Sync Status */}
+        {audioSyncRef.current && (
+          <div className="p-2 border-t border-gray-800 text-xs text-gray-400">
+            <div className="flex justify-between">
+              <span>Audio Latency:</span>
+              <span>
+                {(audioSyncRef.current.getLatency() * 1000).toFixed(1)}ms
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span>Buffered:</span>
+              <span>
+                {audioSyncRef.current.getBufferedDuration().toFixed(2)}s
+              </span>
+            </div>
+          </div>
+        )}
+
         {/* Controls */}
         <div className="p-4 border-t border-gray-800">
-          <button
-            onClick={isRecording ? stopWebRTC : startWebRTC}
-            className={`w-full py-3 px-4 rounded-lg font-medium transition-colors ${
-              isRecording
-                ? "bg-red-600 hover:bg-red-700 text-white"
-                : "bg-green-600 hover:bg-green-700 text-white"
-            }`}
-          >
-            {isRecording ? "Stop Recording" : "Start Recording"}
-          </button>
+          <div className="text-center text-sm text-gray-400">
+            <div>Click the microphone or press spacebar to start talking</div>
+            <div className="text-xs mt-1 text-blue-400">
+              Enhanced audio sync for smooth lip movement
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -214,7 +471,7 @@ interface StatusIndicatorProps {
 
 function StatusIndicator({ label, connected }: StatusIndicatorProps) {
   return (
-    <div className="flex items-center space-x-2 bg-gray-800 px-3 py-1 rounded">
+    <div className="flex items-center space-x-2 bg-gray-800/50 backdrop-blur-sm px-3 py-1 rounded">
       <div
         className={`w-2 h-2 rounded-full ${
           connected ? "bg-green-500" : "bg-red-500"

@@ -130,6 +130,47 @@ class LLMClient:
             logger.error(f"Error generating AI response: {e}")
             return "I apologize, but I encountered an error. Please try again.", EmotionType.NEUTRAL
     
+    def generate_response_sync(
+        self, 
+        user_input: str,
+        max_tokens: int = 150
+    ) -> Tuple[str, EmotionType]:
+        """Synchronous version of generate_response for use in non-async contexts"""
+        if not self.client:
+            return "I'm sorry, I'm not properly configured to respond.", EmotionType.NEUTRAL
+        
+        try:
+            # Add user message
+            self.messages.append({"role": "user", "content": user_input})
+            
+            # Generate response
+            response = self.client.chat.completions.create(
+                model=settings.azure_openai_deployment_name,
+                messages=self.messages,
+                max_tokens=max_tokens,
+                temperature=0.7,
+                top_p=0.9
+            )
+            
+            # Extract response text
+            ai_response = response.choices[0].message.content
+            
+            # Add to conversation history
+            self.messages.append({"role": "assistant", "content": ai_response})
+            
+            # Detect emotion
+            emotion = self.detect_emotion(ai_response)
+            
+            # Limit conversation history to prevent token overflow
+            if len(self.messages) > 20:
+                self.messages = [self.messages[0]] + self.messages[-10:]
+            
+            return ai_response, emotion
+            
+        except Exception as e:
+            logger.error(f"Error generating AI response: {e}")
+            return "I apologize, but I encountered an error. Please try again.", EmotionType.NEUTRAL
+    
     def add_context(self, context: str):
         """Add context to the system prompt"""
         self.system_prompt = f"{self.system_prompt}\n\nAdditional context: {context}"

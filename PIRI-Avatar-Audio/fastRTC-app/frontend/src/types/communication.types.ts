@@ -10,7 +10,7 @@ export interface ChatMessage {
 
 export interface WebSocketMessage {
   type: string;
-  data?: any;
+  data?: unknown;
   timestamp?: number;
   blend_shapes?: Record<string, number>;
   emotion?: string;
@@ -35,7 +35,7 @@ export type WebSocketState = 'connecting' | 'connected' | 'disconnected' | 'erro
 export interface WebRTCOptions {
   onConnected?: () => void;
   onDisconnected?: () => void;
-  onMessage?: (message: any) => void;
+  onMessage?: (message: ChatMessage) => void;
   onAudioStream?: (stream: MediaStream) => void;
   onAudioLevel?: (level: number) => void;
   audioInputDeviceId?: string;

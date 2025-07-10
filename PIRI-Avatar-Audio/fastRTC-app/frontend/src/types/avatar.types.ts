@@ -2,10 +2,14 @@
  * Avatar-related types
  */
 
-export interface BlendShape {
+// Rename BlendShapeValues to BlendShapeValue for single value
+export interface BlendShapeValue {
   name: string;
   value: number;
 }
+
+// Add BlendShapeValues as a Record type for multiple values
+export type BlendShapeValues = Record<string, number>;
 
 export interface VisemeData {
   viseme: string;
@@ -18,15 +22,19 @@ export interface VisemeData {
 }
 
 export enum EmotionType {
-  NEUTRAL = 'neutral',
-  HAPPY = 'happy',
-  SAD = 'sad',
-  ANGRY = 'angry',
-  SURPRISED = 'surprised',
-  DISGUSTED = 'disgusted',
-  FEARFUL = 'fearful',
+  NEUTRAL = "neutral",
+  HAPPY = "happy",
+  SAD = "sad",
+  ANGRY = "angry",
+  SURPRISED = "surprised",
+  DISGUSTED = "disgusted",
+  FEARFUL = "fearful",
 }
 
+// Add AvatarStateType for the state machine states
+export type AvatarStateType = "idle" | "listening" | "speaking";
+
+// Keep the original AvatarState interface for the full state object
 export interface AvatarState {
   current_viseme: string;
   current_emotion: EmotionType;
@@ -36,7 +44,7 @@ export interface AvatarState {
 }
 
 export interface AvatarUpdate {
-  type: 'avatar_update';
+  type: "avatar_update";
   blend_shapes: Record<string, number>;
   viseme?: string;
   emotion?: EmotionType;

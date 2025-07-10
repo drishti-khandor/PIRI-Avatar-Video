@@ -4,14 +4,23 @@
  */
 
 import { getWsUrl } from '@/src/config/api.config';
-import { WebSocketMessage, WebSocketState } from '@/src/types/communication.types';
+import { WebSocketMessage, WebSocketState, ChatMessage } from '@/src/types/communication.types';
+
+// Define event types
+type WebSocketEventMap = {
+  stateChange: WebSocketState;
+  message: WebSocketMessage | ChatMessage;
+  viseme_update: WebSocketMessage;
+  audio_chunk: { audio: string; visemes: unknown[] };
+  [key: string]: unknown;
+};
 
 export class WebSocketService {
   private ws: WebSocket | null = null;
   private reconnectTimeout: NodeJS.Timeout | null = null;
   private reconnectDelay = 1000;
   private maxReconnectDelay = 30000;
-  private listeners: Map<string, Set<Function>> = new Map();
+  private listeners: Map<string, Set<(data: any) => void>> = new Map();
   private state: WebSocketState = 'disconnected';
   private url: string;
   private shouldReconnect = true;
@@ -97,7 +106,7 @@ export class WebSocketService {
     this.reconnectDelay = Math.min(this.reconnectDelay * 2, this.maxReconnectDelay);
   }
 
-  send(message: any): void {
+  send(message: unknown): void {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(message));
     } else {
@@ -121,14 +130,16 @@ export class WebSocketService {
     this.setState('disconnected');
   }
 
-  on(event: string, callback: Function): void {
+  on<K extends keyof WebSocketEventMap>(event: K, callback: (data: WebSocketEventMap[K]) => void): void;
+  on(event: string, callback: (data: any) => void): void;
+  on(event: string, callback: (data: any) => void): void {
     if (!this.listeners.has(event)) {
       this.listeners.set(event, new Set());
     }
     this.listeners.get(event)!.add(callback);
   }
 
-  off(event: string, callback: Function): void {
+  off(event: string, callback: (data: any) => void): void {
     const callbacks = this.listeners.get(event);
     if (callbacks) {
       callbacks.delete(callback);

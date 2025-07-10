@@ -1,7 +1,9 @@
 """
 Main entry point for the FastAPI application
 """
+
 import os
+import logging
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -9,6 +11,14 @@ import uvicorn
 
 from app.config.settings import settings, setup_platform_specific
 from app.api.routes import router as api_router
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[logging.FileHandler("backend.log"), logging.StreamHandler()],
+)
+logger = logging.getLogger(__name__)
 
 
 # Configure platform-specific settings
@@ -39,6 +49,7 @@ app.include_router(api_router)
 
 # Mount FastRTC stream
 from app.api.routes.webrtc import stream
+
 stream.mount(app)
 
 
@@ -46,35 +57,37 @@ stream.mount(app)
 async def health_check():
     """Health check endpoint"""
     from app.api.routes.avatar import viseme_controller
-    
+
     return {
         "status": "healthy",
         "server": {
             "name": settings.app_name,
             "version": settings.app_version,
-            "port": settings.port
+            "port": settings.port,
         },
         "features": {
             "vrm_support": True,
             "forcealign_visemes": True,
             "emotion_detection": True,
-            "smooth_transitions": True
+            "smooth_transitions": True,
         },
         "avatar": {
             "connected_clients": viseme_controller.current_state.connected_clients,
-            "is_animating": viseme_controller.is_animating
+            "is_animating": viseme_controller.is_animating,
         },
-        "ai": {
-            "azure_openai_configured": bool(settings.azure_openai_endpoint)
-        }
+        "ai": {"azure_openai_configured": bool(settings.azure_openai_endpoint)},
     }
 
 
 # Run the application
 if __name__ == "__main__":
+    logger.info(
+        f"Starting server on {settings.host}:{settings.port} (reload={settings.reload})"
+    )
     uvicorn.run(
         "app.main:app",
         host=settings.host,
         port=settings.port,
-        reload=settings.reload
+        reload=settings.reload,
+        log_config=None,  # Use our custom logging config
     )

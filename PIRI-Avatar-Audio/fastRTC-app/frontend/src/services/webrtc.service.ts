@@ -15,9 +15,20 @@ export class WebRTCService {
   private dataArray: Uint8Array | null = null;
   private animationFrameId: number | null = null;
   private options: WebRTCOptions;
+  private sessionId: string;
 
   constructor(options: WebRTCOptions = {}) {
     this.options = options;
+    // Generate unique session ID if not provided
+    this.sessionId = options.webrtcId || this.generateSessionId();
+  }
+
+  private generateSessionId(): string {
+    return `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  }
+
+  getSessionId(): string {
+    return this.sessionId;
   }
 
   async connect(): Promise<void> {
@@ -58,7 +69,7 @@ export class WebRTCService {
         body: JSON.stringify({
           sdp: offer.sdp,
           type: offer.type,
-          webrtc_id: this.options.webrtcId,
+          webrtc_id: this.sessionId,
         }),
       });
 

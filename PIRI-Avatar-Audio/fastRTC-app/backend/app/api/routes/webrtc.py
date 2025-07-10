@@ -45,13 +45,17 @@ stream = Stream(
 @router.get("/updates")
 async def stream_updates(webrtc_id: str):
     """Stream updates for WebRTC connection"""
+    logger.info(f"New WebRTC update stream connection: {webrtc_id}")
+    
     async def output_stream():
         try:
+            logger.debug(f"Starting output stream for WebRTC ID: {webrtc_id}")
             async for output in stream.output_stream(webrtc_id):
                 data = output.args[0] if output.args else {}
+                logger.debug(f"Sending data to client {webrtc_id}: {data.get('type', 'unknown')}")
                 yield f"data: {json.dumps(data)}\n\n"
         except Exception as e:
-            logger.error(f"Error in update stream: {e}")
+            logger.error(f"Error in update stream for {webrtc_id}: {e}", exc_info=True)
             error_data = {
                 "type": "error",
                 "message": str(e)

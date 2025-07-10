@@ -22,7 +22,7 @@ export const API_CONFIG = {
     
     // WebRTC endpoints
     WEBRTC: {
-      OFFER: '/webrtc/offer',
+      OFFER: '/webrtc/offer',  // This is created by fastrtc when stream.mount() is called
       UPDATES: '/updates',
     },
     
