@@ -442,7 +442,7 @@ export function EnhancedVRMAvatarChat() {
 			//     '/static/avatar.glb'
 			// ];
 			// const avatarPaths = ["/static/4thjuly.vrm"];
-			const avatarPaths = ["/static/4thjuly.vrm"];
+			const avatarPaths = ["/static/PIRI2.vrm"];
 
 			for (const path of avatarPaths) {
 				try {
@@ -684,6 +684,19 @@ export function EnhancedVRMAvatarChat() {
 				 console.log("🎭 Found mesh with morph targets:", child.name);
 				 console.log("Available morph targets:", Object.keys(child.morphTargetDictionary));
 
+				 // FIRST: Clear all mouth-related blend shapes
+				  const mouthShapes = ['Fcl_MTH_Close', 'Fcl_MTH_Small', 'Fcl_MTH_Up', 'Fcl_MTH_Down',
+									  'Fcl_MTH_Neutral', 'Fcl_MTH_A', 'Fcl_MTH_E', 'Fcl_MTH_I',
+									  'Fcl_MTH_O', 'Fcl_MTH_U'];
+
+				  mouthShapes.forEach(shapeName => {
+					 const index = child.morphTargetDictionary[shapeName];
+					 if (index !== undefined) {
+						child.morphTargetInfluences[index] = 0;
+					 }
+				  });
+				  console.log("🧹 Cleared all mouth shapes");
+
 				 // Apply new values directly
 				 for (const [shapeName, value] of Object.entries(blendShapes)) {
 					const index = child.morphTargetDictionary[shapeName];
@@ -694,6 +707,12 @@ export function EnhancedVRMAvatarChat() {
 					   console.log(`⚠️ Blend shape not found: ${shapeName}`);
 					}
 				 }
+				 // FORCE RENDER UPDATE - Add these lines:
+				// child.morphTargetInfluences.needsUpdate = true;
+				// child.geometry.morphTargetsRelative = false; // Ensure absolute morph targets
+				// if (child.geometry.computeBoundingSphere) {
+				// 	child.geometry.computeBoundingSphere();
+				// }
 			  }
 		   });
 		   // }
@@ -996,27 +1015,45 @@ export function EnhancedVRMAvatarChat() {
 						</div>
 
 						{/* Enhanced Emotion Controls */}
+						{/*<div className="absolute bottom-4 right-4 bg-black/50 backdrop-blur-sm p-3 rounded-lg">*/}
+						{/*	<div className="text-xs text-white mb-2 text-center">*/}
+						{/*		VRM Emotions*/}
+						{/*	</div>*/}
+						{/*	<div className="grid grid-cols-2 gap-1">*/}
+						{/*		{["neutral", "happy", "sad", "surprised", "angry"].map(*/}
+						{/*			(emotion) => (*/}
+						{/*				<button*/}
+						{/*					key={emotion}*/}
+						{/*					onClick={() => setVRMEmotion(emotion)}*/}
+						{/*					className={`px-2 py-1 text-xs rounded transition-colors ${*/}
+						{/*						currentEmotion === emotion*/}
+						{/*							? "bg-blue-500 text-white"*/}
+						{/*							: "bg-gray-600 text-gray-200 hover:bg-gray-500"*/}
+						{/*					}`}*/}
+						{/*				>*/}
+						{/*					{emotion}*/}
+						{/*				</button>*/}
+						{/*			)*/}
+						{/*		)}*/}
+						{/*	</div>*/}
+						{/*</div>*/}
+
 						<div className="absolute bottom-4 right-4 bg-black/50 backdrop-blur-sm p-3 rounded-lg">
-							<div className="text-xs text-white mb-2 text-center">
-								VRM Emotions
-							</div>
-							<div className="grid grid-cols-2 gap-1">
-								{["neutral", "happy", "sad", "surprised", "angry"].map(
-									(emotion) => (
-										<button
-											key={emotion}
-											onClick={() => setVRMEmotion(emotion)}
-											className={`px-2 py-1 text-xs rounded transition-colors ${
-												currentEmotion === emotion
-													? "bg-blue-500 text-white"
-													: "bg-gray-600 text-gray-200 hover:bg-gray-500"
-											}`}
-										>
-											{emotion}
-										</button>
-									)
-								)}
-							</div>
+
+							<button
+							   onClick={() => {
+								  const testShapes = {
+									// 'Fcl_MTH_Large': 1.0,
+									//   'Fcl_MTH_Down': 1.0,
+									// 'Fcl_MTH_Close': 0.0
+									  'Fcl_MTH_A': 1.0
+								  };
+								  applyVRMBlendShapes(testShapes);
+							   }}
+							   className="px-3 py-1 bg-red-500 text-white rounded"
+							>
+							   🔴 Test Mouth big
+							</button>
 						</div>
 
 						{/* VRM Loading State */}
