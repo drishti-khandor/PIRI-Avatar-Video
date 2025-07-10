@@ -441,6 +441,7 @@ export function EnhancedVRMAvatarChat() {
 			//     '/static/joined1111.glb',
 			//     '/static/avatar.glb'
 			// ];
+			// const avatarPaths = ["/static/4thjuly.vrm"];
 			const avatarPaths = ["/static/4thjuly.vrm"];
 
 			for (const path of avatarPaths) {
