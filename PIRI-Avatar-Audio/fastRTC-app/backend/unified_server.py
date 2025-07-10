@@ -639,7 +639,7 @@ async def get_unified_interface():
         // Load VRM Avatar with enhanced support
         async function loadVRMAvatar() {
             # const vrmPaths = ['/static/avatar.vrm', '/static/joined1111.vrm', '/static/test.vrm'];
-            const vrmPaths = ['/static/4thjuly.vrm'];
+            const vrmPaths = ['/static/PIRI2.vrm'];
 
             for (const path of vrmPaths) {
                 try {

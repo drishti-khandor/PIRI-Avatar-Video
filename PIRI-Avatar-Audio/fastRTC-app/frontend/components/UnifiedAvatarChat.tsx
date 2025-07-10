@@ -440,7 +440,7 @@ export function EnhancedVRMAvatarChat() {
             //     '/static/joined1111.glb',
             //     '/static/avatar.glb'
             // ];
-            const avatarPaths = ['/static/4thjuly.vrm'];
+            const avatarPaths = ['/static/PIRI2.vrm'];
 
             for (const path of avatarPaths) {
                 try {
@@ -741,23 +741,23 @@ export function EnhancedVRMAvatarChat() {
     // }, []);
 
     const applyVRMBlendShapes = useCallback((blendShapes: Record<string, number>) => {
-    console.log('📥 Received blend shapes, scheduling for audio sync...');
+        console.log('📥 Received blend shapes, scheduling for audio sync...');
 
-    if (!vrmRef.current) return;
+        if (!vrmRef.current) return;
 
-    // If audio is not playing, apply immediately (for manual controls)
-    if (!audioStartTimeRef.current) {
+        // If audio is not playing, apply immediately (for manual controls)
+        if (!audioStartTimeRef.current) {
+            applyBlendShapesDirectly(blendShapes);
+            return;
+        }
+
+        // Calculate audio playback time
+        const audioCurrentTime = (Date.now() - audioStartTimeRef.current) / 1000;
+
+        // Apply blend shapes immediately since they should sync with current audio
         applyBlendShapesDirectly(blendShapes);
-        return;
-    }
 
-    // Calculate audio playback time
-    const audioCurrentTime = (Date.now() - audioStartTimeRef.current) / 1000;
-
-    // Apply blend shapes immediately since they should sync with current audio
-    applyBlendShapesDirectly(blendShapes);
-
-}, []);
+    }, []);
 
 //     function hasActiveViseme(blendShapes) {
 //     return Object.entries(blendShapes).some(([name, val]) =>
@@ -843,11 +843,11 @@ export function EnhancedVRMAvatarChat() {
 //     }, []);
 
     const applyBlendShapesDirectly = useCallback((blendShapes: Record<string, number>) => {
-    setAudioSyncInfo(prev => ({
-        ...prev,
-        audioTime: audioStartTimeRef.current ? (Date.now() - audioStartTimeRef.current) / 1000 : 0,
-        lastBlendShapeTime: Date.now()
-    }));
+        setAudioSyncInfo(prev => ({
+            ...prev,
+            audioTime: audioStartTimeRef.current ? (Date.now() - audioStartTimeRef.current) / 1000 : 0,
+            lastBlendShapeTime: Date.now()
+        }));
 
     if (!vrmRef.current) return;
 
