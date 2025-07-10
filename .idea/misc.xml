@@ -3,5 +3,5 @@
   <component name="Black">
     <option name="sdkName" value="Python 3.12 (avatar)" />
   </component>
-  <component name="ProjectRootManager" version="2" project-jdk-name="Python 3.12 (PIRI-Avatar-Audio)" project-jdk-type="Python SDK" />
+  <component name="ProjectRootManager" version="2" project-jdk-name="Python 3.12 (PIRI-Avatar-Video)" project-jdk-type="Python SDK" />
 </project>

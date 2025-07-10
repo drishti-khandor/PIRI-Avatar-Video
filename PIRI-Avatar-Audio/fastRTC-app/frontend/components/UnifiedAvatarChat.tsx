@@ -593,69 +593,109 @@ export function EnhancedVRMAvatarChat() {
 	}, []);
 
 	// Apply VRM/GLB blend shapes
+	// const applyVRMBlendShapes = useCallback(
+	// 	(blendShapes: Record<string, number>) => {
+	// 		console.log();
+	// 		if (!vrmRef.current) return;
+	// 		else console.log("workingggggggg");
+	// 		// Check if this is a VRM with expression manager
+	// 		// if (vrmRef.current.expressionManager) {
+	// 		//     for (const [shapeName, value] of Object.entries(blendShapes)) {
+	// 		//         if (vrmRef.current.expressionManager.expressionMap[shapeName]) {
+	// 		//             vrmRef.current.expressionManager.setValue(shapeName, Math.max(0, Math.min(1, value)));
+	// 		//             console.log(`Setting VRM expression: ${shapeName} to ${value}`);
+	// 		//         }
+	// 		//
+	// 		//     }
+	// 		//     vrmRef.current.expressionManager.update();
+	// 		// }
+	//
+	// 		// Replace the expression manager section with:
+	// 		if (vrmRef.current.expressionManager) {
+	// 			console.log(
+	// 				"Available VRM expressions:",
+	// 				Object.keys(vrmRef.current.expressionManager.expressionMap || {})
+	// 			);
+	//
+	// 			for (const [shapeName, value] of Object.entries(blendShapes)) {
+	// 				vrmRef.current.expressionManager.setValue(
+	// 					shapeName,
+	// 					Math.max(0, Math.min(1, value))
+	// 				);
+	// 				console.log(`✅ Mapped VRM expression: ${shapeName} = ${value}`);
+	// 			}
+	// 			vrmRef.current.expressionManager.update();
+	// 		} else {
+	// 			// Fallback to direct morph target manipulation (GLB or VRM without expression manager)
+	// 			const targetObject = vrmRef.current.scene || vrmRef.current;
+	//
+	// 			targetObject.traverse((child: any) => {
+	// 				if (
+	// 					child.isMesh &&
+	// 					child.morphTargetInfluences &&
+	// 					child.morphTargetDictionary
+	// 				) {
+	// 					// Smooth decay
+	// 					for (let i = 0; i < child.morphTargetInfluences.length; i++) {
+	// 						child.morphTargetInfluences[i] *= 0.9;
+	// 					}
+	// 					console.log("Applying blend shapes to mesh:", child.name);
+	//
+	// 					// Apply new values
+	// 					for (const [shapeName, value] of Object.entries(blendShapes)) {
+	// 						const index = child.morphTargetDictionary[shapeName];
+	// 						if (index !== undefined && value > 0.001) {
+	// 							const currentValue = child.morphTargetInfluences[index] || 0;
+	// 							child.morphTargetInfluences[index] =
+	// 								currentValue + (value - currentValue) * 0.3;
+	// 						}
+	// 						console.log(
+	// 							`Setting morph target: ${shapeName} to ${child.morphTargetInfluences[index]}`
+	// 						);
+	// 					}
+	// 				}
+	// 			});
+	// 		}
+	// 	},
+	// 	[]
+	// );
+
 	const applyVRMBlendShapes = useCallback(
 		(blendShapes: Record<string, number>) => {
-			console.log();
-			if (!vrmRef.current) return;
-			else console.log("workingggggggg");
-			// Check if this is a VRM with expression manager
-			// if (vrmRef.current.expressionManager) {
-			//     for (const [shapeName, value] of Object.entries(blendShapes)) {
-			//         if (vrmRef.current.expressionManager.expressionMap[shapeName]) {
-			//             vrmRef.current.expressionManager.setValue(shapeName, Math.max(0, Math.min(1, value)));
-			//             console.log(`Setting VRM expression: ${shapeName} to ${value}`);
-			//         }
-			//
-			//     }
-			//     vrmRef.current.expressionManager.update();
-			// }
+		   console.log("🎭 Applying VRM blend shapes:", blendShapes);
+		   if (!vrmRef.current) return;
 
-			// Replace the expression manager section with:
-			if (vrmRef.current.expressionManager) {
-				console.log(
-					"Available VRM expressions:",
-					Object.keys(vrmRef.current.expressionManager.expressionMap || {})
-				);
+		   // FORCE USE OF BLEND SHAPES - Comment out expression manager
+		   // if (vrmRef.current.expressionManager) {
+		   //    console.log("Available VRM expressions:", Object.keys(vrmRef.current.expressionManager.expressionMap || {}));
+		   //    for (const [shapeName, value] of Object.entries(blendShapes)) {
+		   //       vrmRef.current.expressionManager.setValue(shapeName, Math.max(0, Math.min(1, value)));
+		   //       console.log(`✅ Mapped VRM expression: ${shapeName} = ${value}`);
+		   //    }
+		   //    vrmRef.current.expressionManager.update();
+		   // } else {
 
-				for (const [shapeName, value] of Object.entries(blendShapes)) {
-					vrmRef.current.expressionManager.setValue(
-						shapeName,
-						Math.max(0, Math.min(1, value))
-					);
-					console.log(`✅ Mapped VRM expression: ${shapeName} = ${value}`);
-				}
-				vrmRef.current.expressionManager.update();
-			} else {
-				// Fallback to direct morph target manipulation (GLB or VRM without expression manager)
-				const targetObject = vrmRef.current.scene || vrmRef.current;
+		   // ALWAYS use direct morph target manipulation for blend shapes
+		   const targetObject = vrmRef.current.scene || vrmRef.current;
 
-				targetObject.traverse((child: any) => {
-					if (
-						child.isMesh &&
-						child.morphTargetInfluences &&
-						child.morphTargetDictionary
-					) {
-						// Smooth decay
-						for (let i = 0; i < child.morphTargetInfluences.length; i++) {
-							child.morphTargetInfluences[i] *= 0.9;
-						}
-						console.log("Applying blend shapes to mesh:", child.name);
+		   targetObject.traverse((child: any) => {
+			  if (child.isMesh && child.morphTargetInfluences && child.morphTargetDictionary) {
+				 console.log("🎭 Found mesh with morph targets:", child.name);
+				 console.log("Available morph targets:", Object.keys(child.morphTargetDictionary));
 
-						// Apply new values
-						for (const [shapeName, value] of Object.entries(blendShapes)) {
-							const index = child.morphTargetDictionary[shapeName];
-							if (index !== undefined && value > 0.001) {
-								const currentValue = child.morphTargetInfluences[index] || 0;
-								child.morphTargetInfluences[index] =
-									currentValue + (value - currentValue) * 0.3;
-							}
-							console.log(
-								`Setting morph target: ${shapeName} to ${child.morphTargetInfluences[index]}`
-							);
-						}
+				 // Apply new values directly
+				 for (const [shapeName, value] of Object.entries(blendShapes)) {
+					const index = child.morphTargetDictionary[shapeName];
+					if (index !== undefined && value > 0.001) {
+					   child.morphTargetInfluences[index] = Math.max(0, Math.min(1, value));
+					   console.log(`✅ Set blend shape: ${shapeName} = ${value} (index: ${index})`);
+					} else {
+					   console.log(`⚠️ Blend shape not found: ${shapeName}`);
 					}
-				});
-			}
+				 }
+			  }
+		   });
+		   // }
 		},
 		[]
 	);
@@ -730,10 +770,12 @@ export function EnhancedVRMAvatarChat() {
 									JSON.stringify({
 										type: "update_viseme",
 										phoneme: v.viseme,
-										emotion: v.emotion || "neutral",
+										// emotion: v.emotion || "neutral",
 									})
 								);
 							}, v.start_time * 1000);
+							console.log(`👄 Scheduled viseme '${v.viseme}' to trigger in ${v.start_time}s (${v.start_time * 1000}ms)`);
+
 						});
 					}
 				} else if (data.type === "visemes") {
@@ -842,9 +884,12 @@ export function EnhancedVRMAvatarChat() {
 
 			// Initialize AI chat
 			const eventSource = initEnhancedAIChatSSE();
-
-			console.log("✅ Enhanced VRM initialization complete");
-
+			if (!eventSource) {
+				console.error("Failed to initialize Enhanced AI Chat SSE");
+			}
+			else {
+				console.log("✅ Enhanced VRM initialization complete");
+			}
 			// Cleanup function
 			return () => {
 				eventSource.close();

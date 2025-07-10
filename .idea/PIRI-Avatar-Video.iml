@@ -4,7 +4,7 @@
     <content url="file://$MODULE_DIR$">
       <excludeFolder url="file://$MODULE_DIR$/PIRI-Avatar-Audio/fastRTC-app/backend/potty" />
     </content>
-    <orderEntry type="jdk" jdkName="Python 3.12 (PIRI-Avatar-Audio)" jdkType="Python SDK" />
+    <orderEntry type="jdk" jdkName="Python 3.12 (PIRI-Avatar-Video)" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
   </component>
   <component name="PyDocumentationSettings">

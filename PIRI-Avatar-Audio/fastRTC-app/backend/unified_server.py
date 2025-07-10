@@ -159,7 +159,8 @@ async def enhanced_vrm_avatar_websocket_endpoint(websocket: WebSocket):
             message = json.loads(data)
 
             if message.get("type") == "update_viseme":
-                viseme = message.get("viseme", "sil")
+                # viseme = message.get("viseme", "sil")
+                viseme = message.get("phoneme", "sil")
                 await enhanced_viseme_controller.update_single_viseme(viseme)
 
     except WebSocketDisconnect:
@@ -198,7 +199,7 @@ async def stream_updates(webrtc_id: str):
         async for output in stream.output_stream(webrtc_id):
             # DEBUG: Log what we're actually sending
             actual_data = output.args[0]
-            logger.info(f"🔍 SSE SENDING: {actual_data}")
+            # logger.info(f"🔍 SSE SENDING: {actual_data}")
             logger.info(f"🔍 TYPE: {type(actual_data)}")
             logger.info(f"🔍 KEYS: {actual_data.keys() if isinstance(actual_data, dict) else 'Not a dict'}")
 
