@@ -199,6 +199,7 @@ class EnhancedVRoidVisemeController:
             return
 
         logger.info(f"🎭 Processing {len(ai_visemes)} ForceAlign visemes - RAPID MODE")
+        self.is_processing_batch = True  # Add this flag
 
         for i, viseme_data in enumerate(ai_visemes):
             try:

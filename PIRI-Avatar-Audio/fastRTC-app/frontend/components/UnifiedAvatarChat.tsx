@@ -707,6 +707,8 @@ export function EnhancedVRMAvatarChat() {
 					   console.log(`⚠️ Blend shape not found: ${shapeName}`);
 					}
 				 }
+
+
 				 // FORCE RENDER UPDATE - Add these lines:
 				// child.morphTargetInfluences.needsUpdate = true;
 				// child.geometry.morphTargetsRelative = false; // Ensure absolute morph targets
@@ -873,7 +875,7 @@ export function EnhancedVRMAvatarChat() {
 	// Reset VRM avatar
 	const resetVRMAvatar = useCallback(async () => {
 		try {
-			const response = await fetch("/reset_avatar", {
+			const response = await fetch("http://localhost:8001/reset_avatar", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 			});
@@ -1039,21 +1041,54 @@ export function EnhancedVRMAvatarChat() {
 						{/*</div>*/}
 
 						<div className="absolute bottom-4 right-4 bg-black/50 backdrop-blur-sm p-3 rounded-lg">
-
 							<button
-							   onClick={() => {
-								  const testShapes = {
-									// 'Fcl_MTH_Large': 1.0,
-									//   'Fcl_MTH_Down': 1.0,
-									// 'Fcl_MTH_Close': 0.0
-									  'Fcl_MTH_A': 1.0
-								  };
-								  applyVRMBlendShapes(testShapes);
-							   }}
-							   className="px-3 py-1 bg-red-500 text-white rounded"
+								onClick={() => {
+									// First, log what morph targets are available
+									if (vrmRef.current) {
+										const targetObject = vrmRef.current.scene || vrmRef.current;
+										targetObject.traverse((child: any) => {
+											if (child.isMesh && child.morphTargetDictionary) {
+												console.log("🔍 Mesh:", child.name);
+												console.log("🔍 Available morph targets:", child.morphTargetDictionary);
+
+												// Try to set Fcl_MTH_A directly
+												const index = child.morphTargetDictionary['Fcl_MTH_A'];
+												if (index !== undefined) {
+													console.log(`🔍 Found Fcl_MTH_A at index ${index}`);
+													console.log(`🔍 Current value: ${child.morphTargetInfluences[index]}`);
+													child.morphTargetInfluences[index] = 1.0;
+													console.log(`🔍 New value: ${child.morphTargetInfluences[index]}`);
+
+													// Force update
+													child.geometry.attributes.position.needsUpdate = true;
+													if (rendererRef.current) {
+														rendererRef.current.render(sceneRef.current.scene, sceneRef.current.camera);
+													}
+												} else {
+													console.log("❌ Fcl_MTH_A not found in morph targets!");
+												}
+											}
+										});
+									}
+								}}
+								className="px-3 py-1 bg-red-500 text-white rounded"
 							>
-							   🔴 Test Mouth big
+								🔴 Debug Morph Targets
 							</button>
+							{/*<button*/}
+							{/*   onClick={() => {*/}
+							{/*	  const testShapes = {*/}
+							{/*		// 'Fcl_MTH_Large': 1.0,*/}
+							{/*		//   'Fcl_MTH_Down': 1.0,*/}
+							{/*		// 'Fcl_MTH_Close': 0.0*/}
+							{/*		  'Fcl_MTH_A': 1.0*/}
+							{/*	  };*/}
+							{/*	  applyVRMBlendShapes(testShapes);*/}
+							{/*   }}*/}
+							{/*   className="px-3 py-1 bg-red-500 text-white rounded"*/}
+							{/*>*/}
+							{/*   🔴 Test Mouth big*/}
+							{/*</button>*/}
 						</div>
 
 						{/* VRM Loading State */}

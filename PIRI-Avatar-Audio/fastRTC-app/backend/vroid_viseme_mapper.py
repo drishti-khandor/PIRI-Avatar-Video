@@ -146,9 +146,9 @@ class VRoidVisemeMapper:
         # For silence, clamp all possible blend shapes to ≤ 0.01
         if viseme == 'sil' or not weights:
             all_possible_shapes = [
-                'FcL_MTH_Close', 'FcL_MTH_Small', 'FcL_MTH_Up', 'FcL_MTH_Down',
-                'FcL_MTH_Neutral', 'FcL_MTH_A', 'FcL_MTH_E', 'FcL_MTH_I',
-                'FcL_MTH_O', 'FcL_MTH_U'
+                'Fcl_MTH_Close', 'Fcl_MTH_Small', 'Fcl_MTH_Up', 'Fcl_MTH_Down',
+                'Fcl_MTH_Neutral', 'Fcl_MTH_A', 'Fcl_MTH_E', 'Fcl_MTH_I',
+                'Fcl_MTH_O', 'Fcl_MTH_U'
             ]
             weights = {shape: 0.01 for shape in all_possible_shapes}
         
