@@ -233,7 +233,7 @@ if __name__ == "__main__":
     import uvicorn
 
     print("🚀 Enhanced 3D VRM Avatar + AI Chat Server with Advanced VRoid Visemes")
-    print("📍 Open: http://localhost:8000")
+    print("📍 Open: http://135.13.30.192:8000")
     print("📁 Place your VRM file as: static/avatar.vrm")
     print("🎯 VRM Features:")
     print("   ✅ Enhanced VRM facial animation")

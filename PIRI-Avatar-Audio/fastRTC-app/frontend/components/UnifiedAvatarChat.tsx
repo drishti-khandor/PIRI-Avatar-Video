@@ -139,7 +139,7 @@ class EnhancedVRMWebRTCClient {
 			await this.peerConnection.setLocalDescription(offer);
 
 			// Fixed: Use port 8000 and relative URL to match your unified_server.py
-			const response = await fetch("http://localhost:8001/webrtc/offer", {
+			const response = await fetch("http://135.13.30.192:8001/webrtc/offer", {
 				method: "POST",
 				headers: {
 					"Content-Type": "application/json",
@@ -304,7 +304,7 @@ export function EnhancedVRMAvatarChat() {
 	const initVRMAvatarWebSocket = useCallback(() => {
 		try {
 			const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-			const ws = new WebSocket(`${protocol}//localhost:8001/ws/avatar`);
+			const ws = new WebSocket(`${protocol}//135.13.30.192:8001/ws/avatar`);
 
 			ws.onopen = () => {
 				setAvatarStatus("connected");
@@ -450,7 +450,7 @@ export function EnhancedVRMAvatarChat() {
 
 					const gltf = await new Promise<any>((resolve, reject) => {
 						gltfLoader.load(
-							`http://localhost:8001${path}`,
+							`http://135.13.30.192:8001${path}`,
 							resolve,
 							undefined,
 							reject
@@ -469,6 +469,7 @@ export function EnhancedVRMAvatarChat() {
 						// Handle VRM
 						vrmRef.current = vrm;
 						scene.add(vrm.scene);
+						// vrm.scene.rotation.y=Math.PI;
 
 						// VRM-specific optimizations
 						if (VRMUtils) {
@@ -680,6 +681,7 @@ export function EnhancedVRMAvatarChat() {
 		   const targetObject = vrmRef.current.scene || vrmRef.current;
 
 		   targetObject.traverse((child: any) => {
+			   console.log(child)
 			  if (child.isMesh && child.morphTargetInfluences && child.morphTargetDictionary) {
 				 console.log("🎭 Found mesh with morph targets:", child.name);
 				 console.log("Available morph targets:", Object.keys(child.morphTargetDictionary));
@@ -697,8 +699,10 @@ export function EnhancedVRMAvatarChat() {
 				  });
 				  console.log("🧹 Cleared all mouth shapes");
 
+
 				 // Apply new values directly
 				 for (const [shapeName, value] of Object.entries(blendShapes)) {
+					 console.log( {blendShapes}, {value},{shapeName} )
 					const index = child.morphTargetDictionary[shapeName];
 					if (index !== undefined && value > 0.001) {
 					   child.morphTargetInfluences[index] = Math.max(0, Math.min(1, value));
@@ -743,7 +747,7 @@ export function EnhancedVRMAvatarChat() {
 	// Initialize Enhanced AI Chat SSE (Fixed URL)
 	const initEnhancedAIChatSSE = useCallback(() => {
 		const eventSource = new EventSource(
-			`http://localhost:8001/updates?webrtc_id=${webrtcId.current}`
+			`http://135.13.30.192:8001/updates?webrtc_id=${webrtcId.current}`
 		);
 
 		eventSource.onmessage = (event) => {
@@ -819,7 +823,7 @@ export function EnhancedVRMAvatarChat() {
 	// Enhanced emotion setting for VRM
 	const setVRMEmotion = useCallback(async (emotion: string) => {
 		try {
-			const response = await fetch("http://localhost:8001/set_emotion", {
+			const response = await fetch("http://135.13.30.192:8001/set_emotion", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({ emotion: emotion }),
@@ -875,7 +879,7 @@ export function EnhancedVRMAvatarChat() {
 	// Reset VRM avatar
 	const resetVRMAvatar = useCallback(async () => {
 		try {
-			const response = await fetch("http://localhost:8001/reset_avatar", {
+			const response = await fetch("http://135.13.30.192:8001/reset_avatar", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 			});

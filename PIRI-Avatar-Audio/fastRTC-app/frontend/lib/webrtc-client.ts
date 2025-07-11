@@ -120,7 +120,7 @@ export class WebRTCClient {
             await this.peerConnection.setLocalDescription(offer);
             
             // Use same-origin request to avoid CORS preflight
-            const response = await fetch('http://localhost:8081/webrtc/offer', {
+            const response = await fetch('http://135.13.30.192:8081/webrtc/offer', {
                 method: 'POST',
                 headers: { 
                     'Content-Type': 'application/json',

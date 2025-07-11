@@ -74,7 +74,7 @@ By leveraging FastRTC, the backend can process live audio, transcribe speech, ge
    npm run dev
    ```
 
-3. Open [http://localhost:3000](http://localhost:3000) in your browser to see the application.
+3. Open [http://135.13.30.192:3000](http://135.13.30.192:3000) in your browser to see the application.
 
 ## 🛠️ Tech Stack
 

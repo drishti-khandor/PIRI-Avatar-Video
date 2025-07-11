@@ -21,6 +21,7 @@ import io
 import wave
 from fastrtc import AdditionalOutputs, get_stt_model, get_tts_model
 from openai import AzureOpenAI
+from advanced_vroid_viseme_system import AdvancedVRoidVisemeMapper
 
 
 # Import the simplified VRoid viseme mapper
@@ -80,6 +81,7 @@ class EnhancedVRoidVisemeController:
 
         # Initialize simplified viseme mapping system
         self.viseme_mapper = VRoidVisemeMapper()
+        # self.viseme_mapper = AdvancedVRoidVisemeMapper()
 
         # Current state
         self.current_blend_shapes = {}
