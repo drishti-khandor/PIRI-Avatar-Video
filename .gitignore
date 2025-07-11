@@ -8,3 +8,7 @@ PIRI-Avatar-Audio/fastRTC-app/backend/.env
 __pycache__/
 *.pyc
 *.pyo
+bin/
+PIRI-Avatar-Audio/lib64
+PIRI-Avatar-Audio/lib64/
+pyvenv.cfg
